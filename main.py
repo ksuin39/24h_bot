@@ -3,7 +3,7 @@ import asyncio
 import importlib  # 💡 파일 이름으로 코드를 동적으로 불러오는 마법의 도구
 from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel
-import HTMLResponse
+from fastapi.responses import HTMLResponse  # 💡 맨 위에 이 import가 없다면 같이 추가해주세요!
 
 app = FastAPI()
 bot_registry = {}
@@ -90,7 +90,7 @@ def stop_bot(bot_id: str):
         return {"success": True, "message": f"{bot_id} 중지 완료"}
     return {"success": False, "message": "봇 없음"}
 
-from fastapi.responses import HTMLResponse  # 💡 맨 위에 이 import가 없다면 같이 추가해주세요!
+
 
 # -------------------------------------------------------------
 # 🎨 [프론트엔드] 실시간 모니터링 심플 대시보드 화면
