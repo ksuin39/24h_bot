@@ -1,20 +1,22 @@
-// 맨 위 첫 줄을 아래와 같이 교체하거나 파일 전체를 유지해주세요.
 let botRegistry = {};
-try {
-    botRegistry = ServerBotRegistry;
-} catch(e) {
-    console.error("데이터 로드 실패, 기본값으로 대체합니다.", e);
-}
-
 let selectedBotId = null;
 let logInterval = null;
 
-// 초기 로딩 엔진
+// [핵심 보수] 백엔드 비동기 API에서 봇 장부를 완벽하게 긁어오는 시동 엔진
 function initDashboard() {
-    renderBots();
-    loadTop10("KRW");
+    fetch('/api/bots')
+        .then(res => res.json())
+        .then(data => {
+            botRegistry = data;
+            renderBots();
+            loadTop10("KRW");
+        })
+        .catch(e => console.error("봇 장부 로드 실패:", e));
+
+    // 5초마다 시세 갱신
     setInterval(() => {
-        const currentExchange = document.getElementById("form-exchange").value;
+        const selectEl = document.getElementById("form-exchange");
+        const currentExchange = selectEl ? selectEl.value : 'Upbit';
         const unit = currentExchange === 'Upbit' ? 'KRW' : 'USD';
         loadTop10(unit);
     }, 5000);
@@ -54,7 +56,9 @@ function renderBots() {
 
     document.getElementById("idle-count").innerText = idleCount;
     document.getElementById("active-count").innerText = activeCount;
-    document.getElementById("active-count-txt").innerText = `${activeCount} / ${Object.keys(botRegistry).length}`;
+    
+    const txtEl = document.getElementById("active-count-txt");
+    if(txtEl) txtEl.innerText = `${activeCount} / ${Object.keys(botRegistry).length}`;
     updatePositionTable();
 }
 
@@ -229,4 +233,5 @@ function updatePositionTable() {
     if(activeFutures) rows.innerHTML = html;
 }
 
-window.onload = initDashboard;
+// 브라우저 DOM 구조가 100% 로드된 후 안전하게 초기화 실행
+window.addEventListener('DOMContentLoaded', initDashboard);
