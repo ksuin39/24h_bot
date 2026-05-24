@@ -144,10 +144,25 @@ def get_bot_logs(bot_id: str):
         return {"logs": bot_registry[bot_id].get("logs", [])[-5:][::-1]}
     return {"logs": []}
 
-@app.get("/", response_class=HTMLResponse)
+# 기존의 @app.get("/") 구문을 아래 코드로 통째로 교체해 주세요.
+
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def dashboard_page(request: Request):
-    # 💡 Jinja2가 따옴표 이스케이프 오류를 내지 않도록 미리 가공해서 안전하게 주입
-    return templates.TemplateResponse("index.html", {
-        "request": request, 
-        "bots_json": json.dumps(bot_registry).replace("'", "\\'")
-    })
+    # Render의 헬스체크(HEAD 요청)는 템플릿 빌드 없이 바로 200 OK를 반환하여 통과시킵니다.
+    if request.method == "HEAD":
+        return HTMLResponse(content="", status_code=200)
+        
+    try:
+        # Jinja2가 따옴표 이스케이프 오류를 내지 않도록 사전에 안전하게 문자열 처리를 합니다.
+        safe_json_str = json.dumps(bot_registry).replace('\\', '\\\\').replace("'", "\\'")
+        
+        return templates.TemplateResponse("index.html", {
+            "request": request, 
+            "bots_json": safe_json_str
+        })
+    except Exception as e:
+        # 혹시 모를 에러 발생 시 500 화면 대신 브라우저에 에러 내용을 명확히 출력하도록 방어막 구축
+        return HTMLResponse(
+            content=f"<h3>⚠️ 대시보드 렌더링 에러 발생</h3><p>{str(e)}</p>", 
+            status_code=500
+        )
