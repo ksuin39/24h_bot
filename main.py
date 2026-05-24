@@ -4,7 +4,7 @@ import importlib
 import json
 import requests
 from fastapi import FastAPI, BackgroundTasks, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -25,7 +25,7 @@ def scan_bots_folder():
     global bot_registry
     BOTS_DIR = "bots"
     
-    # 1. 무조건 안전하게 기본 마틴게일 봇 등록
+    # 기본 마틴게일 봇 기본 등록
     bot_registry["martingale_bot"] = {
         "id": "martingale_bot",
         "name": "Martingale Bot",
@@ -39,7 +39,6 @@ def scan_bots_folder():
         "logs": ["📁 시스템 초기화 완료."]
     }
     
-    # 2. bots 폴더 내부 동적 스캔
     if os.path.exists(BOTS_DIR):
         files = os.listdir(BOTS_DIR)
         for file in files:
@@ -62,14 +61,12 @@ def scan_bots_folder():
 async def run_bot_loop(bot_id: str):
     bot = bot_registry.get(bot_id)
     if not bot: return
-    
     bot["logs"].append(f"🚀 {bot['name']} 가동! ({bot['target_coin']}/{bot['currency']} | 레버리지: {bot['leverage']}배)")
     
     while bot.get("status") == "running":
         try:
             module = importlib.import_module(f"bots.{bot_id}")
             importlib.reload(module)
-            
             if hasattr(module, "trade_logic"):
                 await module.trade_logic(
                     seed_money=bot["seed_money"],
@@ -86,10 +83,15 @@ async def run_bot_loop(bot_id: str):
             bot["logs"].append(f"❌ 실행 에러: {str(e)}")
             bot["status"] = "idle"
             break
-            
         await asyncio.sleep(10)
 
-def get_crypto_top10(currency="KRW"):
+@app.get("/api/bots")
+def get_all_bots():
+    # 자바스크립트가 안전하게 가져갈 수 있도록 완벽한 JSON 응답 반환
+    return JSONResponse(content=bot_registry)
+
+@app.get("/api/top10")
+def api_top10(currency: str = "KRW"):
     try:
         if currency == "KRW":
             markets = requests.get("https://api.upbit.com/v1/market/all").json()
@@ -116,14 +118,9 @@ def get_crypto_top10(currency="KRW"):
     except: 
         return []
 
-@app.get("/api/top10")
-def api_top10(currency: str = "KRW"):
-    return get_crypto_top10(currency)
-
 @app.get("/action/toggle")
 def toggle_bot(background_tasks: BackgroundTasks, bot_id: str, seed: int, coin: str, unit: str, lev: int, market: str, mode: str):
     if bot_id not in bot_registry: return {"status": "error"}
-    
     bot = bot_registry[bot_id]
     if bot["status"] == "running":
         bot["status"] = "idle"
@@ -137,7 +134,6 @@ def toggle_bot(background_tasks: BackgroundTasks, bot_id: str, seed: int, coin: 
         bot["market_type"] = market
         bot["mode"] = mode
         bot["status"] = "running"
-        
         background_tasks.add_task(run_bot_loop, bot_id)
         bot["logs"].append(f"🟩 설정 반영 완료 -> 자금: {seed:,}{unit} | 대상: {coin} | 레버리지: {lev}배")
         return {"status": "running", "bot": bot}
@@ -152,32 +148,5 @@ def get_bot_logs(bot_id: str):
 def dashboard_page(request: Request):
     if request.method == "HEAD":
         return HTMLResponse(content="", status_code=200)
-        
-    try:
-        # 💡 [핵심 해결책] 딕셔너리를 복사하면서 모든 키값과 데이터를 JSON이 100% 읽을 수 있는 형태로 강제 정제합니다.
-        clean_registry = {}
-        for k, v in bot_registry.items():
-            clean_registry[str(k)] = {
-                "id": str(v.get("id", k)),
-                "name": str(v.get("name", "Unknown Bot")),
-                "status": str(v.get("status", "idle")),
-                "seed_money": int(v.get("seed_money", 1000000)),
-                "target_coin": str(v.get("target_coin", "BTC")),
-                "currency": str(v.get("currency", "KRW")),
-                "leverage": int(v.get("leverage", 1)),
-                "market_type": str(v.get("market_type", "Spot")),
-                "mode": str(v.get("mode", "Mock")),
-                "logs": [str(log) for log in v.get("logs", [])]
-            }
-            
-        safe_json_str = json.dumps(clean_registry).replace('\\', '\\\\').replace("'", "\\'")
-        
-        return templates.TemplateResponse("index.html", {
-            "request": request, 
-            "bots_json": safe_json_str
-        })
-    except Exception as e:
-        return HTMLResponse(
-            content=f"<h3>⚠️ 대시보드 렌더링 에러 발생</h3><p>{str(e)}</p>", 
-            status_code=500
-        )
+    # 💡 변수 주입을 아예 없애서 Jinja2 에러 가능성을 원천 차단합니다!
+    return templates.TemplateResponse("index.html", {"request": request})
