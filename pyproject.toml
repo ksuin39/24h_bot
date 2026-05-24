@@ -1,1 +1,11 @@
+[tool.poetry]
+name = "my-dashboard-backend"
+version = "0.1.0"
+description = "Dashboard web service with FastAPI"
+authors = ["Your Name <you@example.com>"]
+package-mode = false  # ✨ 핵심: 이 줄이 있어야 Render에서 에러가 안 납니다!
 
+[tool.poetry.dependencies]
+python = "^3.11"      # 본인의 파이썬 버전에 맞게 설정
+fastapi = "^0.110.0"  # 백엔드 프레임워크
+uvicorn = "^0.28.0"   # 서버 구동기
