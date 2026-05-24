@@ -105,7 +105,7 @@
                         </div>
                     </div>
 
-                    <div class="form-group" id="leverage-area">
+                    <div class="form-group" id="leverage-area" style="display:none;">
                         <label id="lev-label">Leverage 슬라이더: 1배</label>
                         <input type="range" id="form-leverage" min="1" max="50" value="1" oninput="updateLevLabel(this.value)" style="width:100%;">
                     </div>
@@ -149,27 +149,6 @@
         </div>
     </div>
 
-    <script>
-        let botRegistry = {};
-        
-        function initDashboard() {
-            // 페이지가 열리면 서버에서 봇 명단을 깔끔하게 API로 호출
-            fetch('/api/bots')
-            .then(res => res.json())
-            .then(data => {
-                botRegistry = data;
-                renderBots();
-                loadTop10("KRW");
-            })
-            .catch(e => console.error("초기 로딩 에러:", e));
-
-            setInterval(() => {
-                const currentExchange = document.getElementById("form-exchange").value;
-                const unit = currentExchange === 'Upbit' ? 'KRW' : 'USD';
-                loadTop10(unit);
-            }, 5000);
-        }
-    </script>
     <script src="/static/script.js"></script>
 </body>
 </html>
