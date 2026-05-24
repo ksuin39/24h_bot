@@ -1,55 +1,69 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-import os
 
 app = FastAPI()
 
+# 1. 화면에 띄울 대시보드 HTML을 파이썬 코드 안에 글로 직접 박아 넣습니다. (경로 에러 해결)
+DASHBOARD_HTML = """
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>나의 대시보드 - 메인</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body class="bg-gray-100 flex h-screen overflow-hidden">
+
+    <aside class="w-64 bg-slate-800 text-white flex flex-col justify-between p-5">
+        <div>
+            <h1 class="text-2xl font-bold mb-10">Dashboard</h1>
+            <nav class="space-y-4">
+                <a href="#" class="block py-2.5 px-4 rounded bg-slate-700 text-white font-medium">🏠 홈 (Overview)</a>
+                <a href="#" class="block py-2.5 px-4 rounded text-slate-300 hover:bg-slate-700 hover:text-white">📊 통계 분석</a>
+                <a href="#" class="block py-2.5 px-4 rounded text-slate-300 hover:bg-slate-700 hover:text-white">⚙️ 설정</a>
+            </nav>
+        </div>
+        <div class="text-sm text-slate-400">v1.0.0 (FastAPI Backend)</div>
+    </aside>
+
+    <div class="flex-1 flex flex-col">
+        <header class="bg-white shadow-xs px-6 py-4 flex justify-between items-center">
+            <h2 class="text-xl font-semibold text-gray-800">대시보드 홈 (백엔드 연동 완료)</h2>
+            <div class="text-sm text-gray-600">접속 중</div>
+        </header>
+
+        <main class="p-6 space-y-6 overflow-y-auto flex-1">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-white p-6 rounded-xl shadow-xs border border-gray-200">
+                    <p class="text-sm font-medium text-gray-500">오늘 방문자 수</p>
+                    <p class="text-3xl font-bold text-gray-900 mt-2">1,234 명</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-xs border border-gray-200">
+                    <p class="text-sm font-medium text-gray-500">당월 매출</p>
+                    <p class="text-3xl font-bold text-gray-900 mt-2">₩4,560,000</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-xs border border-gray-200">
+                    <p class="text-sm font-medium text-gray-500">처리 대기 문의</p>
+                    <p class="text-3xl font-bold text-gray-900 mt-2">7 건</p>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-xs border border-gray-200 h-64 flex items-center justify-center text-gray-400">
+                백엔드 웹 서비스 서버가 정상적으로 화면을 전송하고 있습니다.
+            </div>
+        </main>
+    </div>
+
+</body>
+</html>
+"""
+
 @app.get("/", response_class=HTMLResponse)
 async def read_dashboard():
-    # 현재 이 파일(main.py)이 있는 위치를 기준으로 절대 경로를 계산합니다.
-    current_dir = os.path.dirname(os.path.abspath(__file__))      # app 폴더 위치
-    parent_dir = os.path.dirname(current_dir)                     # 최상위 프로젝트 폴더 위치
-    
-    # 1. 혹시 app 폴더 안에 html이 있는지 확인
-    path_inside_app = os.path.join(current_dir, "index.html")
-    # 2. 혹시 최상위 폴더에 html이 있는지 확인
-    path_outside_app = os.path.join(parent_dir, "index.html")
-    # 3. 혹시 app/templates 폴더 안에 있는지 확인
-    path_templates = os.path.join(current_dir, "templates", "index.html")
-    
-    # 순서대로 찾아서 먼저 발견되는 파일을 읽어옵니다.
-    target_path = None
-    if os.path.exists(path_outside_app):
-        target_path = path_outside_app
-    elif os.path.exists(path_inside_app):
-        target_path = path_inside_app
-    elif os.path.exists(path_templates):
-        target_path = path_templates
+    # 주소창에 접속하면 위의 HTML 글자를 그대로 화면에 뿌려줍니다.
+    return DASHBOARD_HTML
 
-    # 만약 세 군데 모두 파일이 없다면 에러 메시지와 함께 서버 컴퓨터의 실제 폴더 구조를 화면에 띄웁니다.
-    if target_path is None:
-        error_html = f"""
-        <html>
-            <body style="font-family: sans-serif; padding: 50px; line-height: 1.6;">
-                <h1 style="color: #dc2626;">❌ index.html 파일을 찾을 수 없습니다!</h1>
-                <p>백엔드 서버는 정상 작동 중이나, HTML 파일의 위치가 맞지 않습니다.</p>
-                <h3>서버 내부 탐색 경로 리스트:</h3>
-                <ul>
-                    <li>최상위 경로 (없음): <code>{path_outside_app}</code></li>
-                    <li>app 폴더 내부 (없음): <code>{path_inside_app}</code></li>
-                    <li>templates 폴더 내부 (없음): <code>{path_templates}</code></li>
-                </ul>
-                <p><b>해결 방법:</b> 깃허브 저장소에 <code>index.html</code>이 어떤 폴더 안에 들어있는지 확인해 주세요.</p>
-            </body>
-        </html>
-        """
-        return HTMLResponse(content=error_html, status_code=404)
-        
-    # 파일을 찾았다면 정상적으로 읽어서 대시보드 화면을 띄웁니다.
-    with open(target_path, "r", encoding="utf-8") as f:
-        return f.read()
-
-# 프론트엔드가 호출할 샘플 API
+# 임시 API 데이터 (프론트엔드가 데이터를 요구할 때 줄 방)
 @app.get("/api/stats")
 async def get_stats():
     return {
