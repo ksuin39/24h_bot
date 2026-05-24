@@ -24,9 +24,8 @@ bot_registry = {}
 def scan_bots_folder():
     global bot_registry
     BOTS_DIR = "bots"
-    files = os.listdir(BOTS_DIR)
     
-    # 봇이 하나도 없을 때를 대비해 기본 더미 봇 하나 강제 등록 (에러 방지)
+    # 1. 무조건 안전하게 기본 마틴게일 봇 등록
     bot_registry["martingale_bot"] = {
         "id": "martingale_bot",
         "name": "Martingale Bot",
@@ -40,28 +39,33 @@ def scan_bots_folder():
         "logs": ["📁 시스템 초기화 완료."]
     }
     
-    for file in files:
-        if file.endswith(".py"):
-            bot_id = file.replace(".py", "")
-            if bot_id not in bot_registry:
-                bot_registry[bot_id] = {
-                    "id": bot_id,
-                    "name": f"{bot_id.replace('_', ' ').title()}",
-                    "status": "idle",
-                    "seed_money": 1000000,
-                    "target_coin": "BTC",
-                    "currency": "KRW",
-                    "leverage": 1,
-                    "market_type": "Spot",
-                    "mode": "Mock",
-                    "logs": [f"📁 bots/ 폴더에서 {file} 탐지 완료."]
-                }
+    # 2. bots 폴더 내부 동적 스캔
+    if os.path.exists(BOTS_DIR):
+        files = os.listdir(BOTS_DIR)
+        for file in files:
+            if file.endswith(".py"):
+                bot_id = file.replace(".py", "")
+                if bot_id not in bot_registry:
+                    bot_registry[bot_id] = {
+                        "id": bot_id,
+                        "name": f"{bot_id.replace('_', ' ').title()}",
+                        "status": "idle",
+                        "seed_money": 1000000,
+                        "target_coin": "BTC",
+                        "currency": "KRW",
+                        "leverage": 1,
+                        "market_type": "Spot",
+                        "mode": "Mock",
+                        "logs": [f"📁 bots/ 폴더에서 {file} 탐지 완료."]
+                    }
 
 async def run_bot_loop(bot_id: str):
-    bot = bot_registry[bot_id]
+    bot = bot_registry.get(bot_id)
+    if not bot: return
+    
     bot["logs"].append(f"🚀 {bot['name']} 가동! ({bot['target_coin']}/{bot['currency']} | 레버리지: {bot['leverage']}배)")
     
-    while bot["status"] == "running":
+    while bot.get("status") == "running":
         try:
             module = importlib.import_module(f"bots.{bot_id}")
             importlib.reload(module)
@@ -144,24 +148,35 @@ def get_bot_logs(bot_id: str):
         return {"logs": bot_registry[bot_id].get("logs", [])[-5:][::-1]}
     return {"logs": []}
 
-# 기존의 @app.get("/") 구문을 아래 코드로 통째로 교체해 주세요.
-
 @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def dashboard_page(request: Request):
-    # Render의 헬스체크(HEAD 요청)는 템플릿 빌드 없이 바로 200 OK를 반환하여 통과시킵니다.
     if request.method == "HEAD":
         return HTMLResponse(content="", status_code=200)
         
     try:
-        # Jinja2가 따옴표 이스케이프 오류를 내지 않도록 사전에 안전하게 문자열 처리를 합니다.
-        safe_json_str = json.dumps(bot_registry).replace('\\', '\\\\').replace("'", "\\'")
+        # 💡 [핵심 해결책] 딕셔너리를 복사하면서 모든 키값과 데이터를 JSON이 100% 읽을 수 있는 형태로 강제 정제합니다.
+        clean_registry = {}
+        for k, v in bot_registry.items():
+            clean_registry[str(k)] = {
+                "id": str(v.get("id", k)),
+                "name": str(v.get("name", "Unknown Bot")),
+                "status": str(v.get("status", "idle")),
+                "seed_money": int(v.get("seed_money", 1000000)),
+                "target_coin": str(v.get("target_coin", "BTC")),
+                "currency": str(v.get("currency", "KRW")),
+                "leverage": int(v.get("leverage", 1)),
+                "market_type": str(v.get("market_type", "Spot")),
+                "mode": str(v.get("mode", "Mock")),
+                "logs": [str(log) for log in v.get("logs", [])]
+            }
+            
+        safe_json_str = json.dumps(clean_registry).replace('\\', '\\\\').replace("'", "\\'")
         
         return templates.TemplateResponse("index.html", {
             "request": request, 
             "bots_json": safe_json_str
         })
     except Exception as e:
-        # 혹시 모를 에러 발생 시 500 화면 대신 브라우저에 에러 내용을 명확히 출력하도록 방어막 구축
         return HTMLResponse(
             content=f"<h3>⚠️ 대시보드 렌더링 에러 발생</h3><p>{str(e)}</p>", 
             status_code=500
