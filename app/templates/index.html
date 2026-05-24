@@ -1,1 +1,78 @@
 
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Bot Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans antialiased">
+
+    <nav class="bg-gray-800 border-b border-gray-700 p-4">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold text-green-400">⚡ 24H Trading Bot System</h1>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-900 text-green-300">
+                ● API 연결 완료
+            </span>
+        </div>
+    </nav>
+
+    <div class="container mx-auto p-6 space-y-6">
+        
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                <p class="text-gray-400 text-sm">연결 계좌 총잔고</p>
+                <p class="text-2xl font-bold mt-1">$14,520.80</p>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                <p class="text-gray-400 text-sm">가동 중인 봇 수</p>
+                <p class="text-2xl font-bold mt-1 text-green-400">4 / 5개</p>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                <p class="text-gray-400 text-sm">오늘 PnL</p>
+                <p class="text-2xl font-bold mt-1 text-green-400">+$120.50</p>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                <p class="text-gray-400 text-sm">7일 누적 PnL</p>
+                <p class="text-2xl font-bold mt-1 text-green-400">+$840.00</p>
+            </div>
+            <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+                <p class="text-gray-400 text-sm">30일 누적 PnL</p>
+                <p class="text-2xl font-bold mt-1 text-red-400">-$310.20</p>
+            </div>
+        </div>
+
+        <div class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+            <h2 class="text-lg font-bold mb-4">📊 현재 진입 포지션 현황</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="text-gray-400 border-b border-gray-700 text-sm">
+                        <tr>
+                            <th class="pb-3">봇 이름</th>
+                            <th class="pb-3">투자 자산</th>
+                            <th class="pb-3">포지션</th>
+                            <th class="pb-3">실시간 수익률</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-700 text-sm">
+                        <tr>
+                            <td class="py-3 text-white font-medium">Grid_Bot_V1</td>
+                            <td>BTC/USDT</td>
+                            <td><span class="px-2 py-0.5 rounded text-xs font-bold bg-green-900 text-green-300">LONG</span></td>
+                            <td class="text-green-400 font-semibold">+1.01%</td>
+                        </tr>
+                        <tr>
+                            <td class="py-3 text-white font-medium">Trend_Follow_Eth</td>
+                            <td>ETH/USDT</td>
+                            <td><span class="px-2 py-0.5 rounded text-xs font-bold bg-red-900 text-red-300">SHORT</span></td>
+                            <td class="text-green-400 font-semibold">+1.15%</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>
