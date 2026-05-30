@@ -1,6 +1,5 @@
-
 import os
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 from dotenv import load_dotenv
@@ -8,32 +7,65 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-
-API_KEY = os.environ.get("BINANCE_API_KEY", "")
-SECRET_KEY = os.environ.get("BINANCE_SECRET_KEY", "")
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change-this-secret-key-in-production")
 
 def get_client():
-    return Client(API_KEY, SECRET_KEY)
+    api_key = session.get("api_key", "")
+    secret_key = session.get("secret_key", "")
+    return Client(api_key, secret_key)
+
+def is_logged_in():
+    return "api_key" in session and "secret_key" in session
 
 @app.route("/")
 def index():
+    if not is_logged_in():
+        return redirect(url_for("login"))
     return render_template("index.html")
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        data = request.get_json()
+        api_key = data.get("api_key", "").strip()
+        secret_key = data.get("secret_key", "").strip()
+
+        if not api_key or not secret_key:
+            return jsonify({"success": False, "error": "API 키와 시크릿 키를 모두 입력해주세요."})
+
+        # 실제 바이낸스 API로 키 유효성 검증
+        try:
+            client = Client(api_key, secret_key)
+            client.futures_account_balance()  # 선물 계좌 접근 테스트
+            session["api_key"] = api_key
+            session["secret_key"] = secret_key
+            return jsonify({"success": True})
+        except BinanceAPIException as e:
+            return jsonify({"success": False, "error": f"API 키 오류: {e.message}"})
+        except Exception as e:
+            return jsonify({"success": False, "error": f"연결 실패: {str(e)}"})
+
+    return render_template("login.html")
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 @app.route("/api/futures")
 def futures_data():
+    if not is_logged_in():
+        return jsonify({"success": False, "error": "로그인이 필요합니다."}), 401
+
     try:
         client = get_client()
-
-        # 선물 계좌 잔고 정보
         account = client.futures_account()
 
         total_balance = float(account["totalWalletBalance"])
         unrealized_pnl = float(account["totalUnrealizedProfit"])
         available_balance = float(account["availableBalance"])
         margin_balance = float(account["totalMarginBalance"])
-        margin_ratio = float(account.get("totalMaintMargin", 0))
 
-        # 현재 포지션 (진입 수량 0 이상인 것만)
         positions = []
         for pos in account["positions"]:
             amt = float(pos["positionAmt"])
@@ -44,7 +76,6 @@ def futures_data():
                 leverage = int(pos.get("leverage", 1))
                 side = "LONG" if amt > 0 else "SHORT"
 
-                # 수익률 계산
                 if entry_price > 0:
                     if side == "LONG":
                         pnl_pct = ((mark_price - entry_price) / entry_price) * 100 * leverage
@@ -65,7 +96,6 @@ def futures_data():
                     "notional": abs(float(pos.get("notional", amt * mark_price))),
                 })
 
-        # 자금 여유도 판단
         if available_balance >= margin_balance * 0.5:
             fund_status = "여유"
             fund_color = "green"
