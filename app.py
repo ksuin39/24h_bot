@@ -73,28 +73,39 @@ def futures_data():
         api_key = session["api_key"]
         secret_key = session["secret_key"]
 
+        # 계좌 정보
         account = api_get("/fapi/v3/account", api_key, secret_key)
 
         if isinstance(account, dict) and account.get("code"):
             return jsonify({"success": False, "error": f"{account.get('code')}: {account.get('msg', 'API 오류')}"})
 
+        # 잔고 정보
         balances = api_get("/fapi/v3/balance", api_key, secret_key)
+
+        if isinstance(balances, dict):
+            return jsonify({"success": False, "error": f"잔고 조회 실패: {balances.get('msg', str(balances))}"})
+
         usdt = next((b for b in balances if b["asset"] == "USDT"), None)
 
-        total_balance = float(usdt["balance"]) if usdt else 0
+        total_balance    = float(usdt["balance"])          if usdt else 0
         available_balance = float(usdt["availableBalance"]) if usdt else 0
-        unrealized_pnl = float(usdt.get("crossUnPnl", 0)) if usdt else 0
-        margin_balance = float(usdt.get("marginBalance", total_balance)) if usdt else 0
+        unrealized_pnl   = float(usdt.get("crossUnPnl", 0)) if usdt else 0
+        margin_balance   = float(usdt.get("marginBalance", total_balance)) if usdt else 0
 
+        # 포지션
         positions = []
-        for pos in account.get("positions", []):
+        raw_positions = account.get("positions", [])
+        if not isinstance(raw_positions, list):
+            raw_positions = []
+
+        for pos in raw_positions:
             amt = float(pos.get("positionAmt", 0))
             if amt != 0:
                 entry_price = float(pos.get("entryPrice", 0))
-                mark_price = float(pos.get("markPrice", 0))
-                pnl = float(pos.get("unrealizedProfit", 0))
-                leverage = int(pos.get("leverage", 1))
-                side = "LONG" if amt > 0 else "SHORT"
+                mark_price  = float(pos.get("markPrice", 0))
+                pnl         = float(pos.get("unrealizedProfit", 0))
+                leverage    = int(pos.get("leverage", 1))
+                side        = "LONG" if amt > 0 else "SHORT"
 
                 if entry_price > 0:
                     if side == "LONG":
@@ -105,16 +116,17 @@ def futures_data():
                     pnl_pct = 0
 
                 positions.append({
-                    "symbol": pos["symbol"],
-                    "side": side,
-                    "amount": abs(amt),
-                    "entry_price": entry_price,
-                    "mark_price": mark_price,
+                    "symbol":         pos["symbol"],
+                    "side":           side,
+                    "amount":         abs(amt),
+                    "entry_price":    entry_price,
+                    "mark_price":     mark_price,
                     "unrealized_pnl": pnl,
-                    "pnl_pct": round(pnl_pct, 2),
-                    "leverage": leverage,
+                    "pnl_pct":        round(pnl_pct, 2),
+                    "leverage":       leverage,
                 })
 
+        # 자금 여유도
         if margin_balance > 0:
             if available_balance >= margin_balance * 0.5:
                 fund_status, fund_color = "여유", "green"
@@ -128,12 +140,12 @@ def futures_data():
         return jsonify({
             "success": True,
             "account": {
-                "total_balance": round(total_balance, 2),
-                "margin_balance": round(margin_balance, 2),
+                "total_balance":     round(total_balance, 2),
+                "margin_balance":    round(margin_balance, 2),
                 "available_balance": round(available_balance, 2),
-                "unrealized_pnl": round(unrealized_pnl, 2),
-                "fund_status": fund_status,
-                "fund_color": fund_color,
+                "unrealized_pnl":    round(unrealized_pnl, 2),
+                "fund_status":       fund_status,
+                "fund_color":        fund_color,
             },
             "positions": positions,
         })
