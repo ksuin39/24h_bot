@@ -29,7 +29,6 @@ def api_get(path, api_key, secret_key, params=None):
     return res.json()
 
 def fetch_futures_data(api_key, secret_key):
-    # 최대 3번 재시도
     last_error = ""
     for attempt in range(3):
         try:
@@ -46,8 +45,8 @@ def fetch_futures_data(api_key, secret_key):
                 continue
 
             usdt = next((b for b in balances if b["asset"] == "USDT"), None)
-            total_balance     = float(usdt["balance"])           if usdt else 0
-            available_balance = float(usdt["availableBalance"])  if usdt else 0
+            total_balance     = float(usdt["balance"])            if usdt else 0
+            available_balance = float(usdt["availableBalance"])   if usdt else 0
             unrealized_pnl    = float(usdt.get("crossUnPnl", 0)) if usdt else 0
             margin_balance    = float(usdt.get("marginBalance", total_balance)) if usdt else 0
 
@@ -149,6 +148,24 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
+@app.route("/api/debug")
+def debug_data():
+    if not is_logged_in():
+        return jsonify({"error": "로그인 필요"}), 401
+
+    api_key    = session["api_key"]
+    secret_key = session["secret_key"]
+
+    balance_raw = api_get("/fapi/v3/balance", api_key, secret_key)
+    account_raw = api_get("/fapi/v3/account", api_key, secret_key)
+
+    return jsonify({
+        "balance_type": str(type(balance_raw)),
+        "balance_raw":  balance_raw,
+        "account_type": str(type(account_raw)),
+        "account_keys": list(account_raw.keys()) if isinstance(account_raw, dict) else "not a dict",
+    })
+
 @app.route("/api/futures")
 def futures_data():
     if not is_logged_in():
@@ -157,16 +174,13 @@ def futures_data():
     api_key    = session["api_key"]
     secret_key = session["secret_key"]
 
-    # 캐시가 있고 30초 이내면 캐시 반환
     cache = session.get("cache")
     now   = int(time.time())
     if cache and (now - cache.get("fetched_at", 0)) < 30:
         return jsonify(cache)
 
-    # 새로 fetch
     result = fetch_futures_data(api_key, secret_key)
 
-    # 실패해도 캐시가 있으면 캐시로 응답
     if not result["success"]:
         if cache:
             cache["cache_warning"] = f"갱신 실패 (캐시 사용 중): {result['error']}"
