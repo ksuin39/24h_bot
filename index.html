@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BINANCE FUTURES TERMINAL</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      background: #0a0a0a;
+      color: #00ff41;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .terminal {
+      max-width: 1100px;
+      margin: 0 auto;
+      background: #0d0d0d;
+      border: 1px solid #00ff41;
+      border-radius: 4px;
+      overflow: hidden;
+      box-shadow: 0 0 40px #00ff4115;
+    }
+    .title-bar {
+      background: #00ff41;
+      color: #0a0a0a;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .title-bar .right { display: flex; gap: 16px; align-items: center; }
+    .body { padding: 24px; }
+
+    /* LOGIN */
+    #login-screen { max-width: 500px; margin: 0 auto; }
+    .boot-lines { font-size: 11px; color: #00ff4166; margin-bottom: 20px; line-height: 2.2; }
+    .boot-lines .ok   { color: #00ff41; }
+    .boot-lines .warn { color: #f0b90b; }
+    .divider-line { font-size: 11px; color: #888; margin-bottom: 20px; }
+    .field-label { font-size: 11px; color: #888; margin-bottom: 6px; }
+    .input-wrap { display: flex; align-items: center; margin-bottom: 18px; }
+    .prefix { color: #00ff41; font-size: 13px; margin-right: 8px; white-space: nowrap; }
+    input[type=text], input[type=password] {
+      flex: 1;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid #00ff4155;
+      color: #00ff41;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      padding: 4px 0;
+      outline: none;
+      caret-color: #00ff41;
+    }
+    input[type=text]:focus, input[type=password]:focus { border-bottom-color: #00ff41; }
+    input::placeholder { color: #00ff4133; }
+    .toggle-btn {
+      background: none; border: none; color: #00ff4155;
+      cursor: pointer; font-size: 11px; margin-left: 8px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .toggle-btn:hover { color: #00ff41; }
+    .action-btn {
+      width: 100%;
+      background: transparent;
+      border: 1px solid #00ff41;
+      color: #00ff41;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 10px;
+      cursor: pointer;
+      transition: all 0.15s;
+      letter-spacing: 0.08em;
+    }
+    .action-btn:hover { background: #00ff41; color: #0a0a0a; }
+    .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .error-box {
+      margin-top: 14px;
+      font-size: 11px;
+      color: #ff4141;
+      border-left: 2px solid #ff4141;
+      padding-left: 10px;
+      line-height: 1.8;
+      display: none;
+    }
+    .notice {
+      margin-top: 20px;
+      background: #1a1800;
+      border: 1px solid #3a3200;
+      border-radius: 2px;
+      padding: 12px 14px;
+      font-size: 11px;
+      color: #a89030;
+      line-height: 1.8;
+    }
+    .notice strong { color: #f0b90b; }
+
+    /* DASHBOARD */
+    #dashboard-screen { display: none; }
+    .logout-btn {
+      background: #0a0a0a; color: #00ff41; border: none;
+      font-family: 'JetBrains Mono', monospace; font-size: 11px;
+      font-weight: 700; padding: 3px 10px; cursor: pointer; border-radius: 2px;
+    }
+    .logout-btn:hover { background: #111; }
+    .log-header { font-size: 11px; color: #00ff4166; margin-bottom: 16px; line-height: 2.2; }
+    .log-header .ok   { color: #00ff41; }
+    .log-header .warn { color: #f0b90b; }
+    .section-title { font-size: 11px; color: #888; margin-bottom: 12px; letter-spacing: 0.08em; }
+    .section-title span { color: #00ff41; }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .stat-card {
+      background: #111;
+      border: 1px solid #00ff4133;
+      border-radius: 2px;
+      padding: 12px 14px;
+    }
+    .stat-card .slabel { font-size: 10px; color: #888; margin-bottom: 8px; letter-spacing: 0.06em; }
+    .stat-card .svalue { font-size: 19px; font-weight: 700; color: #00ff41; }
+    .pnl-pos { color: #00ff41; }
+    .pnl-neg { color: #ff4141; }
+    .status-green { color: #00ff41; }
+    .status-amber { color: #f0b90b; }
+    .status-red   { color: #ff4141; }
+    hr.divider { border: none; border-top: 1px solid #00ff4122; margin: 16px 0; }
+    .table-wrap { border: 1px solid #00ff4133; border-radius: 2px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 700px; }
+    thead tr { background: #111; }
+    th {
+      text-align: left; padding: 10px 14px;
+      font-size: 10px; color: #888; letter-spacing: 0.08em;
+      border-bottom: 1px solid #00ff4122; font-weight: 400;
+    }
+    td { padding: 11px 14px; border-bottom: 1px solid #00ff4111; color: #ccc; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: #00ff410a; }
+    .badge {
+      display: inline-block; padding: 2px 8px;
+      font-size: 10px; font-weight: 700; border-radius: 2px; letter-spacing: 0.06em;
+    }
+    .long  { background: #00ff4122; color: #00ff41; border: 1px solid #00ff4144; }
+    .short { background: #ff414122; color: #ff4141; border: 1px solid #ff414144; }
+    .empty-row td { text-align: center; color: #00ff4144; padding: 32px; }
+    .footer-bar {
+      margin-top: 16px; font-size: 10px; color: #00ff4144;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .refresh-btn {
+      background: transparent; border: 1px solid #00ff4144;
+      color: #00ff4188; font-family: 'JetBrains Mono', monospace;
+      font-size: 10px; padding: 5px 12px; cursor: pointer; border-radius: 2px;
+    }
+    .refresh-btn:hover { border-color: #00ff41; color: #00ff41; }
+    .warn-box {
+      background: #1a1400; border: 1px solid #f0b90b44;
+      color: #f0b90b; font-size: 11px; padding: 10px 14px;
+      border-radius: 2px; margin-bottom: 12px; display: none;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+    .blink { animation: blink 1s step-end infinite; }
+  </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="terminal" id="login-terminal">
+  <div class="title-bar">
+    <span>BINANCE FUTURES TERMINAL v1.0</span>
+    <span id="login-clock" style="font-size:11px;"></span>
+  </div>
+  <div class="body">
+    <div id="login-screen">
+      <div class="boot-lines">
+        <div>[&nbsp;<span class="ok">&nbsp;OK&nbsp;&nbsp;</span>&nbsp;] Initializing terminal...</div>
+        <div>[&nbsp;<span class="ok">&nbsp;OK&nbsp;&nbsp;</span>&nbsp;] Connecting to fapi.binance.com</div>
+        <div>[&nbsp;<span class="warn">WAIT </span>&nbsp;] Awaiting authentication credentials...</div>
+      </div>
+      <div class="divider-line">── AUTH REQUIRED ──────────────────────────────</div>
+      <div style="font-size:11px; color:#888; margin-bottom:20px; line-height:1.8;">
+        &gt; Enter your Binance API credentials to access futures account data.<br>
+        &gt; Keys are stored in browser memory only and never sent to any server.
+      </div>
+
+      <div class="field-label">// API KEY</div>
+      <div class="input-wrap">
+        <span class="prefix">root@futures:~$</span>
+        <input type="password" id="api-key" placeholder="paste api key here..." autocomplete="off" />
+        <button class="toggle-btn" onclick="toggleVis('api-key',this)">[show]</button>
+      </div>
+
+      <div class="field-label">// SECRET KEY</div>
+      <div class="input-wrap">
+        <span class="prefix">root@futures:~$</span>
+        <input type="password" id="secret-key" placeholder="paste secret key here..." autocomplete="off" />
+        <button class="toggle-btn" onclick="toggleVis('secret-key',this)">[show]</button>
+      </div>
+
+      <button class="action-btn" id="login-btn" onclick="doLogin()">&gt;&gt; CONNECT TO EXCHANGE</button>
+      <div class="error-box" id="login-error"></div>
+
+      <div class="notice">
+        <strong>⚠ 보안 안내</strong><br>
+        API 키는 브라우저 메모리에만 저장되며 외부 서버로 전송되지 않습니다.<br>
+        반드시 <strong>읽기 전용(Read Only)</strong> 권한으로 발급하세요.<br>
+        출금 / 거래 권한은 절대 부여하지 마세요.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div class="terminal" id="dashboard-terminal" style="display:none;">
+  <div class="title-bar">
+    <span>■ BINANCE FUTURES TERMINAL v1.0 — LIVE</span>
+    <div class="right">
+      <span id="dash-clock" style="font-size:11px;"></span>
+      <button class="logout-btn" onclick="doLogout()">[DISCONNECT]</button>
+    </div>
+  </div>
+  <div class="body">
+    <div id="dashboard-screen">
+      <div class="log-header" id="log-header">
+        <div>[&nbsp;<span class="ok">&nbsp;OK&nbsp;&nbsp;</span>&nbsp;] Session authenticated</div>
+        <div>[&nbsp;<span class="ok">&nbsp;OK&nbsp;&nbsp;</span>&nbsp;] Connected to fapi.binance.com</div>
+        <div>[&nbsp;<span class="warn">WAIT </span>&nbsp;] Fetching account data...</div>
+      </div>
+
+      <div class="warn-box" id="warn-box"></div>
+
+      <div class="section-title">// <span>ACCOUNT SUMMARY</span></div>
+      <div class="summary-grid" id="summary-cards">
+        <div class="stat-card"><div class="slabel">LOADING</div><div class="svalue">—</div></div>
+      </div>
+
+      <hr class="divider">
+
+      <div class="section-title">// <span>OPEN POSITIONS</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>SYMBOL</th><th>SIDE</th><th>SIZE</th>
+              <th>ENTRY PRICE</th><th>MARK PRICE</th>
+              <th>UNREAL PNL</th><th>ROE %</th><th>LEVERAGE</th>
+            </tr>
+          </thead>
+          <tbody id="pos-body">
+            <tr class="empty-row"><td colspan="8">&gt; loading positions...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="footer-bar">
+        <span id="updated-time">&gt; last update: —</span>
+        <button class="refresh-btn" onclick="loadDashboard()">[REFRESH]</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const BASE = "https://fapi.binance.com";
+  let G_API_KEY = "";
+  let G_SECRET  = "";
+  let refreshTimer = null;
+
+  function updateClock() {
+    const t = new Date().toLocaleTimeString("ko-KR", { hour12: false }) + " KST";
+    const lc = document.getElementById("login-clock");
+    const dc = document.getElementById("dash-clock");
+    if (lc) lc.textContent = t;
+    if (dc) dc.textContent = t;
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  function toggleVis(id, btn) {
+    const el = document.getElementById(id);
+    el.type = el.type === "password" ? "text" : "password";
+    btn.textContent = el.type === "password" ? "[show]" : "[hide]";
+  }
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+      if (document.getElementById("login-terminal").style.display !== "none") doLogin();
+    }
+  });
+
+  async function sign(params) {
+    const query = Object.entries(params).map(([k,v]) => `${k}=${v}`).join("&");
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw", encoder.encode(G_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+    );
+    const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(query));
+    const hex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2,"0")).join("");
+    return query + "&signature=" + hex;
+  }
+
+  async function apiGet(path, params = {}) {
+    params.timestamp = Date.now();
+    const query = await sign(params);
+    const res = await fetch(`${BASE}${path}?${query}`, {
+      headers: { "X-MBX-APIKEY": G_API_KEY }
+    });
+    return res.json();
+  }
+
+  async function doLogin() {
+    const apiKey    = document.getElementById("api-key").value.trim();
+    const secretKey = document.getElementById("secret-key").value.trim();
+    const btn       = document.getElementById("login-btn");
+    const errEl     = document.getElementById("login-error");
+
+    errEl.style.display = "none";
+    if (!apiKey || !secretKey) {
+      errEl.textContent = "> ERROR: both fields required";
+      errEl.style.display = "block";
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = ">> AUTHENTICATING...";
+    G_API_KEY = apiKey;
+    G_SECRET  = secretKey;
+
+    try {
+      const result = await apiGet("/fapi/v3/balance");
+      if (result.code && result.code !== 0) {
+        throw new Error(result.msg || "API 오류");
+      }
+      if (!Array.isArray(result)) {
+        throw new Error(result.msg || "인증 실패");
+      }
+      btn.textContent = ">> AUTH SUCCESS — LOADING DASHBOARD...";
+      setTimeout(() => {
+        document.getElementById("login-terminal").style.display = "none";
+        document.getElementById("dashboard-terminal").style.display = "block";
+        loadDashboard();
+        refreshTimer = setInterval(loadDashboard, 30000);
+      }, 600);
+    } catch (e) {
+      errEl.textContent = "> ERROR: " + e.message;
+      errEl.style.display = "block";
+      btn.disabled = false;
+      btn.textContent = ">> CONNECT TO EXCHANGE";
+      G_API_KEY = "";
+      G_SECRET  = "";
+    }
+  }
+
+  function doLogout() {
+    G_API_KEY = "";
+    G_SECRET  = "";
+    if (refreshTimer) clearInterval(refreshTimer);
+    document.getElementById("dashboard-terminal").style.display = "none";
+    document.getElementById("login-terminal").style.display = "block";
+    document.getElementById("api-key").value = "";
+    document.getElementById("secret-key").value = "";
+    document.getElementById("login-btn").disabled = false;
+    document.getElementById("login-btn").textContent = ">> CONNECT TO EXCHANGE";
+    document.getElementById("login-error").style.display = "none";
+  }
+
+  async function loadDashboard() {
+    const warnEl = document.getElementById("warn-box");
+    warnEl.style.display = "none";
+
+    try {
+      const [balances, account] = await Promise.all([
+        apiGet("/fapi/v3/balance"),
+        apiGet("/fapi/v3/account"),
+      ]);
+
+      if (!Array.isArray(balances)) throw new Error(balances.msg || "잔고 조회 실패");
+      if (account.code)            throw new Error(account.msg  || "계좌 조회 실패");
+
+      const usdt = balances.find(b => b.asset === "USDT") || {};
+      const totalBal     = parseFloat(usdt.balance          || 0);
+      const availBal     = parseFloat(usdt.availableBalance || 0);
+      const unPnl        = parseFloat(usdt.crossUnPnl       || 0);
+      const marginBal    = parseFloat(usdt.marginBalance     || totalBal);
+
+      let fundStatus = "여유", fundColor = "green";
+      if (marginBal > 0) {
+        if      (availBal >= marginBal * 0.5) { fundStatus = "여유"; fundColor = "green"; }
+        else if (availBal >= marginBal * 0.2) { fundStatus = "보통"; fundColor = "amber"; }
+        else                                   { fundStatus = "위험"; fundColor = "red";   }
+      }
+
+      const pnlCls  = unPnl >= 0 ? "pnl-pos" : "pnl-neg";
+      const pnlSign = unPnl >= 0 ? "+" : "";
+
+      document.getElementById("log-header").innerHTML = `
+        <div>[&nbsp;<span class="ok">&nbsp;OK&nbsp;&nbsp;</span>&nbsp;] Session authenticated</div>
+        <div>[&nbsp;<span class="ok">&nbsp;OK&nbsp;&nbsp;</span>&nbsp;] Account data fetched successfully</div>
+        <div>[&nbsp;<span class="ok">&nbsp;OK&nbsp;&nbsp;</span>&nbsp;] ${(account.positions||[]).filter(p=>parseFloat(p.positionAmt)!==0).length} open position(s) found</div>
+      `;
+
+      document.getElementById("summary-cards").innerHTML = `
+        <div class="stat-card">
+          <div class="slabel">WALLET BALANCE</div>
+          <div class="svalue">$${totalBal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+        </div>
+        <div class="stat-card">
+          <div class="slabel">MARGIN BALANCE</div>
+          <div class="svalue">$${marginBal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+        </div>
+        <div class="stat-card">
+          <div class="slabel">AVAILABLE</div>
+          <div class="svalue">$${availBal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+        </div>
+        <div class="stat-card">
+          <div class="slabel">UNREALIZED PNL</div>
+          <div class="svalue ${pnlCls}">${pnlSign}$${unPnl.toFixed(2)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="slabel">FUND STATUS</div>
+          <div class="svalue status-${fundColor}">${fundStatus}</div>
+        </div>
+      `;
+
+      const positions = (account.positions || []).filter(p => parseFloat(p.positionAmt) !== 0);
+      const tbody = document.getElementById("pos-body");
+
+      if (positions.length === 0) {
+        tbody.innerHTML = '<tr class="empty-row"><td colspan="8">&gt; no open positions</td></tr>';
+      } else {
+        tbody.innerHTML = positions.map(pos => {
+          const amt        = parseFloat(pos.positionAmt);
+          const entryPrice = parseFloat(pos.entryPrice || 0);
+          const markPrice  = parseFloat(pos.markPrice  || 0);
+          const pnl        = parseFloat(pos.unrealizedProfit || 0);
+          const leverage   = parseInt(pos.leverage || 1);
+          const side       = amt > 0 ? "LONG" : "SHORT";
+          let pnlPct = 0;
+          if (entryPrice > 0) {
+            pnlPct = ((markPrice - entryPrice) / entryPrice) * 100 * leverage;
+            if (side === "SHORT") pnlPct = -pnlPct;
+          }
+          const pCls  = pnl >= 0 ? "pnl-pos" : "pnl-neg";
+          const rCls  = pnlPct >= 0 ? "pnl-pos" : "pnl-neg";
+          const pSign = pnl >= 0 ? "+" : "";
+          const rSign = pnlPct >= 0 ? "+" : "";
+          return `
+            <tr>
+              <td style="color:#00ff41;font-weight:700;">${pos.symbol}</td>
+              <td><span class="badge ${side === 'LONG' ? 'long' : 'short'}">${side}</span></td>
+              <td>${Math.abs(amt)}</td>
+              <td>$${entryPrice.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:4})}</td>
+              <td>$${markPrice.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:4})}</td>
+              <td class="${pCls}">${pSign}$${pnl.toFixed(2)}</td>
+              <td class="${rCls}">${rSign}${pnlPct.toFixed(2)}%</td>
+              <td>${leverage}x</td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      document.getElementById("updated-time").textContent =
+        "> last update: " + new Date().toLocaleTimeString("ko-KR", { hour12: false });
+
+    } catch (e) {
+      document.getElementById("warn-box").textContent = "> ERROR: " + e.message;
+      document.getElementById("warn-box").style.display = "block";
+    }
+  }
+</script>
+</body>
+</html>
