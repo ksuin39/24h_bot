@@ -1,18 +1,32 @@
 import os
+import hmac
+import hashlib
+import time
+import requests
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
-from binance.client import Client
-from binance.exceptions import BinanceAPIException
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change-this-secret-key-in-production")
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change-this-secret")
 
-def get_client():
-    api_key = session.get("api_key", "")
-    secret_key = session.get("secret_key", "")
-    return Client(api_key, secret_key)
+BASE_URL = "https://fapi.binance.com"
+
+def sign(params, secret):
+    query = "&".join(f"{k}={v}" for k, v in params.items())
+    sig = hmac.new(secret.encode(), query.encode(), hashlib.sha256).hexdigest()
+    return query + f"&signature={sig}"
+
+def api_get(path, api_key, secret_key, params=None):
+    if params is None:
+        params = {}
+    params["timestamp"] = int(time.time() * 1000)
+    query = sign(params, secret_key)
+    url = f"{BASE_URL}{path}?{query}"
+    headers = {"X-MBX-APIKEY": api_key}
+    res = requests.get(url, headers=headers, timeout=10)
+    return res.json()
 
 def is_logged_in():
     return "api_key" in session and "secret_key" in session
@@ -33,15 +47,13 @@ def login():
         if not api_key or not secret_key:
             return jsonify({"success": False, "error": "API 키와 시크릿 키를 모두 입력해주세요."})
 
-        # 실제 바이낸스 API로 키 유효성 검증
         try:
-            client = Client(api_key, secret_key)
-            client.futures_account_balance()  # 선물 계좌 접근 테스트
+            result = api_get("/fapi/v2/balance", api_key, secret_key)
+            if isinstance(result, dict) and result.get("code"):
+                return jsonify({"success": False, "error": f"API 오류 {result['code']}: {result.get('msg', '')}"})
             session["api_key"] = api_key
             session["secret_key"] = secret_key
             return jsonify({"success": True})
-        except BinanceAPIException as e:
-            return jsonify({"success": False, "error": f"API 키 오류: {e.message}"})
         except Exception as e:
             return jsonify({"success": False, "error": f"연결 실패: {str(e)}"})
 
@@ -58,8 +70,13 @@ def futures_data():
         return jsonify({"success": False, "error": "로그인이 필요합니다."}), 401
 
     try:
-        client = get_client()
-        account = client.futures_account()
+        api_key = session["api_key"]
+        secret_key = session["secret_key"]
+
+        account = api_get("/fapi/v2/account", api_key, secret_key)
+
+        if isinstance(account, dict) and account.get("code"):
+            return jsonify({"success": False, "error": account.get("msg", "API 오류")})
 
         total_balance = float(account["totalWalletBalance"])
         unrealized_pnl = float(account["totalUnrealizedProfit"])
@@ -67,7 +84,7 @@ def futures_data():
         margin_balance = float(account["totalMarginBalance"])
 
         positions = []
-        for pos in account["positions"]:
+        for pos in account.get("positions", []):
             amt = float(pos["positionAmt"])
             if amt != 0:
                 entry_price = float(pos["entryPrice"])
@@ -93,18 +110,14 @@ def futures_data():
                     "unrealized_pnl": pnl,
                     "pnl_pct": round(pnl_pct, 2),
                     "leverage": leverage,
-                    "notional": abs(float(pos.get("notional", amt * mark_price))),
                 })
 
         if available_balance >= margin_balance * 0.5:
-            fund_status = "여유"
-            fund_color = "green"
+            fund_status, fund_color = "여유", "green"
         elif available_balance >= margin_balance * 0.2:
-            fund_status = "보통"
-            fund_color = "amber"
+            fund_status, fund_color = "보통", "amber"
         else:
-            fund_status = "위험"
-            fund_color = "red"
+            fund_status, fund_color = "위험", "red"
 
         return jsonify({
             "success": True,
@@ -119,8 +132,6 @@ def futures_data():
             "positions": positions,
         })
 
-    except BinanceAPIException as e:
-        return jsonify({"success": False, "error": f"Binance API 오류: {e.message}"})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
