@@ -73,23 +73,28 @@ def futures_data():
         api_key = session["api_key"]
         secret_key = session["secret_key"]
 
-        account = api_get("/fapi/v2/account", api_key, secret_key)
+        # v3 엔드포인트로 변경
+        account = api_get("/fapi/v3/account", api_key, secret_key)
 
         if isinstance(account, dict) and account.get("code"):
-            return jsonify({"success": False, "error": account.get("msg", "API 오류")})
+            return jsonify({"success": False, "error": f"{account.get('code')}: {account.get('msg', 'API 오류')}"})
 
-        total_balance = float(account["totalWalletBalance"])
-        unrealized_pnl = float(account["totalUnrealizedProfit"])
-        available_balance = float(account["availableBalance"])
-        margin_balance = float(account["totalMarginBalance"])
+        # 잔고는 balance 엔드포인트로 따로 조회
+        balances = api_get("/fapi/v3/balance", api_key, secret_key)
+        usdt = next((b for b in balances if b["asset"] == "USDT"), None)
+
+        total_balance = float(usdt["balance"]) if usdt else 0
+        available_balance = float(usdt["availableBalance"]) if usdt else 0
+        unrealized_pnl = float(usdt.get("crossUnPnl", 0)) if usdt else 0
+        margin_balance = float(usdt.get("marginBalance", total_balance)) if usdt else 0
 
         positions = []
         for pos in account.get("positions", []):
-            amt = float(pos["positionAmt"])
+            amt = float(pos.get("positionAmt", 0))
             if amt != 0:
-                entry_price = float(pos["entryPrice"])
+                entry_price = float(pos.get("entryPrice", 0))
                 mark_price = float(pos.get("markPrice", 0))
-                pnl = float(pos["unrealizedProfit"])
+                pnl = float(pos.get("unrealizedProfit", 0))
                 leverage = int(pos.get("leverage", 1))
                 side = "LONG" if amt > 0 else "SHORT"
 
@@ -112,12 +117,15 @@ def futures_data():
                     "leverage": leverage,
                 })
 
-        if available_balance >= margin_balance * 0.5:
-            fund_status, fund_color = "여유", "green"
-        elif available_balance >= margin_balance * 0.2:
-            fund_status, fund_color = "보통", "amber"
+        if margin_balance > 0:
+            if available_balance >= margin_balance * 0.5:
+                fund_status, fund_color = "여유", "green"
+            elif available_balance >= margin_balance * 0.2:
+                fund_status, fund_color = "보통", "amber"
+            else:
+                fund_status, fund_color = "위험", "red"
         else:
-            fund_status, fund_color = "위험", "red"
+            fund_status, fund_color = "여유", "green"
 
         return jsonify({
             "success": True,
@@ -134,7 +142,7 @@ def futures_data():
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
-
+        
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
