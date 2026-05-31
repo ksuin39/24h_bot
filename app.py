@@ -48,7 +48,7 @@ def login():
             return jsonify({"success": False, "error": "API 키와 시크릿 키를 모두 입력해주세요."})
 
         try:
-            result = api_get("/fapi/v2/balance", api_key, secret_key)
+            result = api_get("/fapi/v3/balance", api_key, secret_key)
             if isinstance(result, dict) and result.get("code"):
                 return jsonify({"success": False, "error": f"API 오류 {result['code']}: {result.get('msg', '')}"})
             session["api_key"] = api_key
@@ -73,13 +73,11 @@ def futures_data():
         api_key = session["api_key"]
         secret_key = session["secret_key"]
 
-        # v3 엔드포인트로 변경
         account = api_get("/fapi/v3/account", api_key, secret_key)
 
         if isinstance(account, dict) and account.get("code"):
             return jsonify({"success": False, "error": f"{account.get('code')}: {account.get('msg', 'API 오류')}"})
 
-        # 잔고는 balance 엔드포인트로 따로 조회
         balances = api_get("/fapi/v3/balance", api_key, secret_key)
         usdt = next((b for b in balances if b["asset"] == "USDT"), None)
 
@@ -142,7 +140,7 @@ def futures_data():
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
-        
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
