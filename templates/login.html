@@ -3,211 +3,174 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>로그인 — 바이낸스 선물 대시보드</title>
+  <title>BINANCE FUTURES TERMINAL</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0d0d0d;
-      color: #e0e0e0;
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      background: #0a0a0a;
+      color: #00ff41;
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 24px;
     }
-    .login-wrap {
+    .terminal {
       width: 100%;
-      max-width: 420px;
+      max-width: 560px;
+      background: #0d0d0d;
+      border: 1px solid #00ff41;
+      border-radius: 4px;
+      overflow: hidden;
+      box-shadow: 0 0 30px #00ff4120;
     }
-    .logo-area {
-      text-align: center;
-      margin-bottom: 32px;
-    }
-    .logo-area .icon {
-      font-size: 40px;
-      display: block;
-      margin-bottom: 10px;
-    }
-    .logo-area h1 {
-      font-size: 20px;
-      font-weight: 600;
-      color: #fff;
-    }
-    .logo-area p {
-      font-size: 13px;
-      color: #666;
-      margin-top: 4px;
-    }
-    .card {
-      background: #1a1a1a;
-      border: 1px solid #2a2a2a;
-      border-radius: 14px;
-      padding: 28px 24px;
-    }
-    .field { margin-bottom: 18px; }
-    .field label {
-      display: block;
+    .title-bar {
+      background: #00ff41;
+      color: #0a0a0a;
+      padding: 6px 14px;
       font-size: 12px;
-      color: #888;
-      margin-bottom: 7px;
-      font-weight: 500;
-      letter-spacing: 0.03em;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
-    .input-wrap {
-      position: relative;
-    }
-    .field input {
-      width: 100%;
-      background: #111;
-      border: 1px solid #2a2a2a;
-      border-radius: 8px;
-      color: #e0e0e0;
+    .title-bar .dots { display: flex; gap: 6px; }
+    .title-bar .dot { width: 10px; height: 10px; border-radius: 50%; background: #0a0a0a; opacity: 0.4; }
+    .body { padding: 24px; }
+    .boot-lines { font-size: 11px; color: #00ff4188; margin-bottom: 20px; line-height: 2; }
+    .boot-lines .ok { color: #00ff41; }
+    .boot-lines .warn { color: #f0b90b; }
+    .prompt-line {
       font-size: 13px;
-      padding: 11px 42px 11px 13px;
+      color: #00ff41;
+      margin-bottom: 6px;
+    }
+    .prompt-line span { color: #888; }
+    .input-wrap { display: flex; align-items: center; margin-bottom: 16px; }
+    .prefix { color: #00ff41; font-size: 13px; margin-right: 8px; white-space: nowrap; }
+    input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid #00ff4155;
+      color: #00ff41;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      padding: 4px 0;
       outline: none;
-      transition: border-color 0.15s;
-      font-family: 'Courier New', monospace;
-      letter-spacing: 0.04em;
+      caret-color: #00ff41;
     }
-    .field input:focus {
-      border-color: #f0b90b;
-    }
+    input:focus { border-bottom-color: #00ff41; }
+    input::placeholder { color: #00ff4133; }
     .toggle-btn {
-      position: absolute;
-      right: 11px;
-      top: 50%;
-      transform: translateY(-50%);
       background: none;
       border: none;
-      color: #555;
+      color: #00ff4155;
       cursor: pointer;
-      font-size: 16px;
-      padding: 0;
-      line-height: 1;
+      font-size: 12px;
+      margin-left: 8px;
+      font-family: 'JetBrains Mono', monospace;
     }
-    .toggle-btn:hover { color: #888; }
+    .toggle-btn:hover { color: #00ff41; }
     .submit-btn {
       width: 100%;
-      background: #f0b90b;
-      color: #000;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
+      background: transparent;
+      border: 1px solid #00ff41;
+      color: #00ff41;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
       font-weight: 700;
-      padding: 13px;
+      padding: 10px;
       cursor: pointer;
-      margin-top: 4px;
-      transition: opacity 0.15s, transform 0.1s;
+      margin-top: 8px;
+      transition: all 0.15s;
+      letter-spacing: 0.1em;
     }
-    .submit-btn:hover { opacity: 0.9; }
-    .submit-btn:active { transform: scale(0.98); }
-    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .submit-btn:hover { background: #00ff41; color: #0a0a0a; }
+    .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .error-msg {
-      background: #2e0d0d;
-      border: 1px solid #4a1414;
-      color: #f87171;
-      border-radius: 8px;
-      font-size: 12px;
-      padding: 10px 13px;
       margin-top: 14px;
+      font-size: 11px;
+      color: #ff4141;
+      border-left: 2px solid #ff4141;
+      padding-left: 10px;
+      line-height: 1.8;
       display: none;
     }
-    .notice {
-      margin-top: 18px;
-      background: #1a1800;
-      border: 1px solid #3a3200;
-      border-radius: 8px;
-      padding: 12px 14px;
-      font-size: 12px;
-      color: #a89030;
-      line-height: 1.6;
-    }
-    .notice strong { color: #f0b90b; }
-    .loading-spinner {
-      display: inline-block;
-      width: 14px;
-      height: 14px;
-      border: 2px solid #0005;
-      border-top-color: #000;
-      border-radius: 50%;
-      animation: spin 0.6s linear infinite;
-      margin-right: 6px;
-      vertical-align: middle;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    .blink { animation: blink 1s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    .cursor { display: inline-block; width: 8px; height: 14px; background: #00ff41; vertical-align: middle; }
   </style>
 </head>
 <body>
-  <div class="login-wrap">
-    <div class="logo-area">
-      <span class="icon">📊</span>
-      <h1>선물 대시보드</h1>
-      <p>Binance Futures Monitor</p>
+  <div class="terminal">
+    <div class="title-bar">
+      <span>BINANCE FUTURES TERMINAL v1.0</span>
+      <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
     </div>
-
-    <div class="card">
-      <div class="field">
-        <label>API KEY</label>
-        <div class="input-wrap">
-          <input type="password" id="api-key" placeholder="바이낸스 API 키 입력" autocomplete="off" />
-          <button class="toggle-btn" onclick="toggleVis('api-key', this)" type="button">👁</button>
-        </div>
+    <div class="body">
+      <div class="boot-lines">
+        <div>[ <span class="ok">  OK  </span> ] Starting Binance API Service...</div>
+        <div>[ <span class="ok">  OK  </span> ] Futures endpoint connected: fapi.binance.com</div>
+        <div>[ <span class="warn"> WAIT </span> ] Awaiting authentication credentials...</div>
       </div>
 
-      <div class="field">
-        <label>SECRET KEY</label>
-        <div class="input-wrap">
-          <input type="password" id="secret-key" placeholder="바이낸스 시크릿 키 입력" autocomplete="off" />
-          <button class="toggle-btn" onclick="toggleVis('secret-key', this)" type="button">👁</button>
-        </div>
+      <div class="prompt-line">── <span>AUTH REQUIRED</span> ──────────────────────</div>
+
+      <br>
+      <div style="font-size:11px; color:#888; margin-bottom:16px;">
+        > Enter your Binance API credentials to access<br>
+        > futures account data. Read-only keys recommended.
       </div>
 
-      <button class="submit-btn" id="login-btn" onclick="doLogin()">연결하기</button>
+      <div style="font-size:11px; color:#888; margin-bottom:6px;">// API KEY</div>
+      <div class="input-wrap">
+        <span class="prefix">root@futures:~$</span>
+        <input type="password" id="api-key" placeholder="paste api key here..." autocomplete="off" />
+        <button class="toggle-btn" onclick="toggleVis('api-key', this)">[show]</button>
+      </div>
+
+      <div style="font-size:11px; color:#888; margin-bottom:6px;">// SECRET KEY</div>
+      <div class="input-wrap">
+        <span class="prefix">root@futures:~$</span>
+        <input type="password" id="secret-key" placeholder="paste secret key here..." autocomplete="off" />
+        <button class="toggle-btn" onclick="toggleVis('secret-key', this)">[show]</button>
+      </div>
+
+      <button class="submit-btn" id="login-btn" onclick="doLogin()">
+        &gt;&gt; CONNECT TO EXCHANGE
+      </button>
+
       <div class="error-msg" id="error-msg"></div>
-
-      <div class="notice">
-        <strong>⚠️ 보안 안내</strong><br>
-        API 키는 서버 세션에만 임시 저장되며 DB에 기록되지 않습니다.<br>
-        반드시 <strong>읽기 전용(Read Only)</strong> 권한으로 발급하세요.<br>
-        출금·거래 권한은 절대 부여하지 마세요.
-      </div>
     </div>
   </div>
 
   <script>
+    document.addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+
     function toggleVis(id, btn) {
       const input = document.getElementById(id);
-      if (input.type === "password") {
-        input.type = "text";
-        btn.textContent = "🙈";
-      } else {
-        input.type = "password";
-        btn.textContent = "👁";
-      }
+      input.type = input.type === "password" ? "text" : "password";
+      btn.textContent = input.type === "password" ? "[show]" : "[hide]";
     }
-
-    // 엔터키 로그인
-    document.addEventListener("keydown", e => {
-      if (e.key === "Enter") doLogin();
-    });
 
     async function doLogin() {
       const apiKey = document.getElementById("api-key").value.trim();
       const secretKey = document.getElementById("secret-key").value.trim();
       const btn = document.getElementById("login-btn");
       const errEl = document.getElementById("error-msg");
-
       errEl.style.display = "none";
 
       if (!apiKey || !secretKey) {
-        errEl.textContent = "API 키와 시크릿 키를 모두 입력해주세요.";
+        errEl.textContent = "> ERROR: both fields required";
         errEl.style.display = "block";
         return;
       }
 
       btn.disabled = true;
-      btn.innerHTML = '<span class="loading-spinner"></span>연결 중...';
+      btn.textContent = ">> AUTHENTICATING...";
 
       try {
         const res = await fetch("/login", {
@@ -218,19 +181,19 @@
         const data = await res.json();
 
         if (data.success) {
-          btn.textContent = "✅ 연결 성공!";
-          setTimeout(() => { window.location.href = "/"; }, 600);
+          btn.textContent = ">> AUTH SUCCESS — LOADING DASHBOARD...";
+          setTimeout(() => { window.location.href = "/"; }, 800);
         } else {
-          errEl.textContent = data.error;
+          errEl.innerHTML = `> ERROR: ${data.error}`;
           errEl.style.display = "block";
           btn.disabled = false;
-          btn.textContent = "연결하기";
+          btn.textContent = ">> CONNECT TO EXCHANGE";
         }
       } catch (e) {
-        errEl.textContent = "서버 연결 실패. 잠시 후 다시 시도해주세요.";
+        errEl.textContent = "> ERROR: connection refused";
         errEl.style.display = "block";
         btn.disabled = false;
-        btn.textContent = "연결하기";
+        btn.textContent = ">> CONNECT TO EXCHANGE";
       }
     }
   </script>
