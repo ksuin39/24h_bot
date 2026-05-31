@@ -272,211 +272,216 @@
 
 <script>
   const BASE = "https://fapi.binance.com";
-  let G_API_KEY = "";
-  let G_SECRET  = "";
-  let refreshTimer = null;
+let G_API_KEY = "";
+let G_SECRET  = "";
+let refreshTimer = null;
 
-  function updateClock() {
-    const t = new Date().toLocaleTimeString("ko-KR", { hour12: false }) + " KST";
-    const lc = document.getElementById("login-clock");
-    const dc = document.getElementById("dash-clock");
-    if (lc) lc.textContent = t;
-    if (dc) dc.textContent = t;
+function updateClock() {
+  const t = new Date().toLocaleTimeString("ko-KR", { hour12: false }) + " KST";
+  const lc = document.getElementById("login-clock");
+  const dc = document.getElementById("dash-clock");
+  if (lc) lc.textContent = t;
+  if (dc) dc.textContent = t;
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+function toggleVis(id, btn) {
+  const el = document.getElementById(id);
+  el.type = el.type === "password" ? "text" : "password";
+  btn.textContent = el.type === "password" ? "[show]" : "[hide]";
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    if (document.getElementById("login-terminal").style.display !== "none") doLogin();
   }
-  updateClock();
-  setInterval(updateClock, 1000);
+});
 
-  function toggleVis(id, btn) {
-    const el = document.getElementById(id);
-    el.type = el.type === "password" ? "text" : "password";
-    btn.textContent = el.type === "password" ? "[show]" : "[hide]";
-  }
+async function sign(params) {
+  const query = Object.entries(params).map(([k,v]) => `${k}=${v}`).join("&");
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw", encoder.encode(G_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(query));
+  const hex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2,"0")).join("");
+  return query + "&signature=" + hex;
+}
 
-  document.addEventListener("keydown", e => {
-    if (e.key === "Enter") {
-      if (document.getElementById("login-terminal").style.display !== "none") doLogin();
-    }
+async function apiGet(path, params = {}) {
+  params.timestamp = Date.now();
+  const query = await sign(params);
+  const res = await fetch(`${BASE}${path}?${query}`, {
+    headers: { "X-MBX-APIKEY": G_API_KEY }
   });
+  return res.json();
+}
 
-  async function sign(params) {
-    const query = Object.entries(params).map(([k,v]) => `${k}=${v}`).join("&");
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      "raw", encoder.encode(G_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
-    );
-    const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(query));
-    const hex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2,"0")).join("");
-    return query + "&signature=" + hex;
+async function doLogin() {
+  const apiKey    = document.getElementById("api-key").value.trim();
+  const secretKey = document.getElementById("secret-key").value.trim();
+  const btn       = document.getElementById("login-btn");
+  const errEl     = document.getElementById("login-error");
+
+  errEl.style.display = "none";
+  if (!apiKey || !secretKey) {
+    errEl.textContent = "> ERROR: both fields required";
+    errEl.style.display = "block";
+    return;
   }
 
-  async function apiGet(path, params = {}) {
-    params.timestamp = Date.now();
-    const query = await sign(params);
-    const res = await fetch(`${BASE}${path}?${query}`, {
-      headers: { "X-MBX-APIKEY": G_API_KEY }
-    });
-    return res.json();
-  }
+  btn.disabled = true;
+  btn.textContent = ">> AUTHENTICATING...";
+  G_API_KEY = apiKey;
+  G_SECRET  = secretKey;
 
-  async function doLogin() {
-    const apiKey    = document.getElementById("api-key").value.trim();
-    const secretKey = document.getElementById("secret-key").value.trim();
-    const btn       = document.getElementById("login-btn");
-    const errEl     = document.getElementById("login-error");
-
-    errEl.style.display = "none";
-    if (!apiKey || !secretKey) {
-      errEl.textContent = "> ERROR: both fields required";
-      errEl.style.display = "block";
-      return;
+  try {
+    const result = await apiGet("/fapi/v3/balance");
+    if (result.code && result.code !== 0) {
+      throw new Error(result.msg || "API 오류");
     }
-
-    btn.disabled = true;
-    btn.textContent = ">> AUTHENTICATING...";
-    G_API_KEY = apiKey;
-    G_SECRET  = secretKey;
-
-    try {
-      const result = await apiGet("/fapi/v3/balance");
-      if (result.code && result.code !== 0) {
-        throw new Error(result.msg || "API 오류");
-      }
-      if (!Array.isArray(result)) {
-        throw new Error(result.msg || "인증 실패");
-      }
-      btn.textContent = ">> AUTH SUCCESS — LOADING DASHBOARD...";
-      setTimeout(() => {
-        document.getElementById("login-terminal").style.display = "none";
-        document.getElementById("dashboard-terminal").style.display = "block";
-        loadDashboard();
-        refreshTimer = setInterval(loadDashboard, 30000);
-      }, 600);
-    } catch (e) {
-      errEl.textContent = "> ERROR: " + e.message;
-      errEl.style.display = "block";
-      btn.disabled = false;
-      btn.textContent = ">> CONNECT TO EXCHANGE";
-      G_API_KEY = "";
-      G_SECRET  = "";
+    if (!Array.isArray(result)) {
+      throw new Error(result.msg || "인증 실패");
     }
-  }
-
-  function doLogout() {
+    btn.textContent = ">> AUTH SUCCESS — LOADING DASHBOARD...";
+    setTimeout(() => {
+      document.getElementById("login-terminal").style.display = "none";
+      document.getElementById("dashboard-terminal").style.display = "block";
+      loadDashboard();
+      refreshTimer = setInterval(loadDashboard, 30000);
+    }, 600);
+  } catch (e) {
+    errEl.textContent = "> ERROR: " + e.message;
+    errEl.style.display = "block";
+    btn.disabled = false;
+    btn.textContent = ">> CONNECT TO EXCHANGE";
     G_API_KEY = "";
     G_SECRET  = "";
-    if (refreshTimer) clearInterval(refreshTimer);
-    document.getElementById("dashboard-terminal").style.display = "none";
-    document.getElementById("login-terminal").style.display = "block";
-    document.getElementById("api-key").value = "";
-    document.getElementById("secret-key").value = "";
-    document.getElementById("login-btn").disabled = false;
-    document.getElementById("login-btn").textContent = ">> CONNECT TO EXCHANGE";
-    document.getElementById("login-error").style.display = "none";
   }
+}
 
-  async function loadDashboard() {
-    const warnEl = document.getElementById("warn-box");
-    warnEl.style.display = "none";
+function doLogout() {
+  G_API_KEY = "";
+  G_SECRET  = "";
+  if (refreshTimer) clearInterval(refreshTimer);
+  document.getElementById("dashboard-terminal").style.display = "none";
+  document.getElementById("login-terminal").style.display = "block";
+  document.getElementById("api-key").value = "";
+  document.getElementById("secret-key").value = "";
+  document.getElementById("login-btn").disabled = false;
+  document.getElementById("login-btn").textContent = ">> CONNECT TO EXCHANGE";
+  document.getElementById("login-error").style.display = "none";
+}
 
-    try {
-      const [balances, account] = await Promise.all([
-        apiGet("/fapi/v3/balance"),
-        apiGet("/fapi/v3/account"),
-      ]);
+async function loadDashboard() {
+  const warnEl = document.getElementById("warn-box");
+  warnEl.style.display = "none";
 
-      if (!Array.isArray(balances)) throw new Error(balances.msg || "잔고 조회 실패");
-      if (account.code)            throw new Error(account.msg  || "계좌 조회 실패");
+  try {
+    const [balances, account] = await Promise.all([
+      apiGet("/fapi/v3/balance"),
+      apiGet("/fapi/v3/account"),
+    ]);
 
-      const usdt = balances.find(b => b.asset === "USDT") || {};
-      const totalBal     = parseFloat(usdt.balance          || 0);
-      const availBal     = parseFloat(usdt.availableBalance || 0);
-      const unPnl        = parseFloat(usdt.crossUnPnl       || 0);
-      const marginBal    = parseFloat(usdt.marginBalance     || totalBal);
+    document.getElementById("warn-box").textContent =
+      "balance: " + JSON.stringify(balances).slice(0, 200) +
+      " | account keys: " + JSON.stringify(Object.keys(account || {}));
+    document.getElementById("warn-box").style.display = "block";
 
-      let fundStatus = "여유", fundColor = "green";
-      if (marginBal > 0) {
-        if      (availBal >= marginBal * 0.5) { fundStatus = "여유"; fundColor = "green"; }
-        else if (availBal >= marginBal * 0.2) { fundStatus = "보통"; fundColor = "amber"; }
-        else                                   { fundStatus = "위험"; fundColor = "red";   }
-      }
+    if (!Array.isArray(balances)) throw new Error(balances.msg || "잔고 조회 실패");
+    if (account.code)             throw new Error(account.msg  || "계좌 조회 실패");
 
-      const pnlCls  = unPnl >= 0 ? "pnl-pos" : "pnl-neg";
-      const pnlSign = unPnl >= 0 ? "+" : "";
+    const usdt      = balances.find(b => b.asset === "USDT") || {};
+    const totalBal  = parseFloat(usdt.balance          || 0);
+    const availBal  = parseFloat(usdt.availableBalance || 0);
+    const unPnl     = parseFloat(usdt.crossUnPnl       || 0);
+    const marginBal = parseFloat(usdt.marginBalance    || totalBal);
 
-      document.getElementById("log-header").innerHTML = `
-        <div>[&nbsp;<span class="ok">&nbsp;OK&nbsp;&nbsp;</span>&nbsp;] Session authenticated</div>
-        <div>[&nbsp;<span class="ok">&nbsp;OK&nbsp;&nbsp;</span>&nbsp;] Account data fetched successfully</div>
-        <div>[&nbsp;<span class="ok">&nbsp;OK&nbsp;&nbsp;</span>&nbsp;] ${(account.positions||[]).filter(p=>parseFloat(p.positionAmt)!==0).length} open position(s) found</div>
-      `;
-
-      document.getElementById("summary-cards").innerHTML = `
-        <div class="stat-card">
-          <div class="slabel">WALLET BALANCE</div>
-          <div class="svalue">$${totalBal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-        </div>
-        <div class="stat-card">
-          <div class="slabel">MARGIN BALANCE</div>
-          <div class="svalue">$${marginBal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-        </div>
-        <div class="stat-card">
-          <div class="slabel">AVAILABLE</div>
-          <div class="svalue">$${availBal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-        </div>
-        <div class="stat-card">
-          <div class="slabel">UNREALIZED PNL</div>
-          <div class="svalue ${pnlCls}">${pnlSign}$${unPnl.toFixed(2)}</div>
-        </div>
-        <div class="stat-card">
-          <div class="slabel">FUND STATUS</div>
-          <div class="svalue status-${fundColor}">${fundStatus}</div>
-        </div>
-      `;
-
-      const positions = (account.positions || []).filter(p => parseFloat(p.positionAmt) !== 0);
-      const tbody = document.getElementById("pos-body");
-
-      if (positions.length === 0) {
-        tbody.innerHTML = '<tr class="empty-row"><td colspan="8">&gt; no open positions</td></tr>';
-      } else {
-        tbody.innerHTML = positions.map(pos => {
-          const amt        = parseFloat(pos.positionAmt);
-          const entryPrice = parseFloat(pos.entryPrice || 0);
-          const markPrice  = parseFloat(pos.markPrice  || 0);
-          const pnl        = parseFloat(pos.unrealizedProfit || 0);
-          const leverage   = parseInt(pos.leverage || 1);
-          const side       = amt > 0 ? "LONG" : "SHORT";
-          let pnlPct = 0;
-          if (entryPrice > 0) {
-            pnlPct = ((markPrice - entryPrice) / entryPrice) * 100 * leverage;
-            if (side === "SHORT") pnlPct = -pnlPct;
-          }
-          const pCls  = pnl >= 0 ? "pnl-pos" : "pnl-neg";
-          const rCls  = pnlPct >= 0 ? "pnl-pos" : "pnl-neg";
-          const pSign = pnl >= 0 ? "+" : "";
-          const rSign = pnlPct >= 0 ? "+" : "";
-          return `
-            <tr>
-              <td style="color:#00ff41;font-weight:700;">${pos.symbol}</td>
-              <td><span class="badge ${side === 'LONG' ? 'long' : 'short'}">${side}</span></td>
-              <td>${Math.abs(amt)}</td>
-              <td>$${entryPrice.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:4})}</td>
-              <td>$${markPrice.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:4})}</td>
-              <td class="${pCls}">${pSign}$${pnl.toFixed(2)}</td>
-              <td class="${rCls}">${rSign}${pnlPct.toFixed(2)}%</td>
-              <td>${leverage}x</td>
-            </tr>
-          `;
-        }).join("");
-      }
-
-      document.getElementById("updated-time").textContent =
-        "> last update: " + new Date().toLocaleTimeString("ko-KR", { hour12: false });
-
-    } catch (e) {
-      document.getElementById("warn-box").textContent = "> ERROR: " + e.message;
-      document.getElementById("warn-box").style.display = "block";
+    let fundStatus = "여유", fundColor = "green";
+    if (marginBal > 0) {
+      if      (availBal >= marginBal * 0.5) { fundStatus = "여유"; fundColor = "green"; }
+      else if (availBal >= marginBal * 0.2) { fundStatus = "보통"; fundColor = "amber"; }
+      else                                   { fundStatus = "위험"; fundColor = "red";   }
     }
+
+    const pnlCls  = unPnl >= 0 ? "pnl-pos" : "pnl-neg";
+    const pnlSign = unPnl >= 0 ? "+" : "";
+
+    document.getElementById("log-header").innerHTML = `
+      <div>[&nbsp;<span class="ok">&nbsp;OK&nbsp;&nbsp;</span>&nbsp;] Session authenticated</div>
+      <div>[&nbsp;<span class="ok">&nbsp;OK&nbsp;&nbsp;</span>&nbsp;] Account data fetched successfully</div>
+      <div>[&nbsp;<span class="ok">&nbsp;OK&nbsp;&nbsp;</span>&nbsp;] ${(account.positions||[]).filter(p=>parseFloat(p.positionAmt)!==0).length} open position(s) found</div>
+    `;
+
+    document.getElementById("summary-cards").innerHTML = `
+      <div class="stat-card">
+        <div class="slabel">WALLET BALANCE</div>
+        <div class="svalue">$${totalBal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      </div>
+      <div class="stat-card">
+        <div class="slabel">MARGIN BALANCE</div>
+        <div class="svalue">$${marginBal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      </div>
+      <div class="stat-card">
+        <div class="slabel">AVAILABLE</div>
+        <div class="svalue">$${availBal.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      </div>
+      <div class="stat-card">
+        <div class="slabel">UNREALIZED PNL</div>
+        <div class="svalue ${pnlCls}">${pnlSign}$${unPnl.toFixed(2)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="slabel">FUND STATUS</div>
+        <div class="svalue status-${fundColor}">${fundStatus}</div>
+      </div>
+    `;
+
+    const positions = (account.positions || []).filter(p => parseFloat(p.positionAmt) !== 0);
+    const tbody = document.getElementById("pos-body");
+
+    if (positions.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="8">&gt; no open positions</td></tr>';
+    } else {
+      tbody.innerHTML = positions.map(pos => {
+        const amt        = parseFloat(pos.positionAmt);
+        const entryPrice = parseFloat(pos.entryPrice || 0);
+        const markPrice  = parseFloat(pos.markPrice  || 0);
+        const pnl        = parseFloat(pos.unrealizedProfit || 0);
+        const leverage   = parseInt(pos.leverage || 1);
+        const side       = amt > 0 ? "LONG" : "SHORT";
+        let pnlPct = 0;
+        if (entryPrice > 0) {
+          pnlPct = ((markPrice - entryPrice) / entryPrice) * 100 * leverage;
+          if (side === "SHORT") pnlPct = -pnlPct;
+        }
+        const pCls  = pnl >= 0 ? "pnl-pos" : "pnl-neg";
+        const rCls  = pnlPct >= 0 ? "pnl-pos" : "pnl-neg";
+        const pSign = pnl >= 0 ? "+" : "";
+        const rSign = pnlPct >= 0 ? "+" : "";
+        return `
+          <tr>
+            <td style="color:#00ff41;font-weight:700;">${pos.symbol}</td>
+            <td><span class="badge ${side === 'LONG' ? 'long' : 'short'}">${side}</span></td>
+            <td>${Math.abs(amt)}</td>
+            <td>$${entryPrice.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:4})}</td>
+            <td>$${markPrice.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:4})}</td>
+            <td class="${pCls}">${pSign}$${pnl.toFixed(2)}</td>
+            <td class="${rCls}">${rSign}${pnlPct.toFixed(2)}%</td>
+            <td>${leverage}x</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    document.getElementById("updated-time").textContent =
+      "> last update: " + new Date().toLocaleTimeString("ko-KR", { hour12: false });
+
+  } catch (e) {
+    document.getElementById("warn-box").textContent = "> ERROR: " + e.message;
+    document.getElementById("warn-box").style.display = "block";
   }
+}
 </script>
 </body>
 </html>
