@@ -214,4 +214,102 @@
         <span id="updated-time">> last update: —</span>
         <button class="refresh-btn" onclick="loadData()">[REFRESH]</button>
       </div>
-    </d
+    </div>
+  </div>
+
+  <script>
+    // 시계
+    function updateClock() {
+      const now = new Date();
+      document.getElementById("clock").textContent =
+        now.toLocaleTimeString("ko-KR", { hour12: false }) + " KST";
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    async function loadData() {
+      document.getElementById("error-area").innerHTML = "";
+      try {
+        const res = await fetch("/api/futures");
+        const data = await res.json();
+
+        if (!data.success) {
+          document.getElementById("error-area").innerHTML =
+            `<div class="error-box">> ERROR: ${data.error}</div>`;
+          return;
+        }
+
+        const acc = data.account;
+
+        // 로그 업데이트
+        document.getElementById("log-header").innerHTML = `
+          <div>[ <span class="ok">  OK  </span> ] Session authenticated</div>
+          <div>[ <span class="ok">  OK  </span> ] Account data fetched successfully</div>
+          <div>[ <span class="ok">  OK  </span> ] ${data.positions.length} open position(s) found</div>
+        `;
+
+        // 요약 카드
+        const pnlClass = acc.unrealized_pnl >= 0 ? "pnl-pos" : "pnl-neg";
+        const pnlSign = acc.unrealized_pnl >= 0 ? "+" : "";
+        document.getElementById("summary-cards").innerHTML = `
+          <div class="stat-card">
+            <div class="label">WALLET BALANCE</div>
+            <div class="value">$${acc.total_balance.toLocaleString()}</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">MARGIN BALANCE</div>
+            <div class="value">$${acc.margin_balance.toLocaleString()}</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">AVAILABLE</div>
+            <div class="value">$${acc.available_balance.toLocaleString()}</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">UNREALIZED PNL</div>
+            <div class="value ${pnlClass}">${pnlSign}$${acc.unrealized_pnl.toFixed(2)}</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">FUND STATUS</div>
+            <div class="value status-${acc.fund_color}">${acc.fund_status}</div>
+          </div>
+        `;
+
+        // 포지션 테이블
+        const tbody = document.getElementById("pos-body");
+        if (data.positions.length === 0) {
+          tbody.innerHTML = '<tr class="empty-row"><td colspan="8">> no open positions</td></tr>';
+        } else {
+          tbody.innerHTML = data.positions.map(p => {
+            const pnlCls = p.unrealized_pnl >= 0 ? "pnl-pos" : "pnl-neg";
+            const pnlSign = p.unrealized_pnl >= 0 ? "+" : "";
+            const roeCls = p.pnl_pct >= 0 ? "pnl-pos" : "pnl-neg";
+            const roeSign = p.pnl_pct >= 0 ? "+" : "";
+            return `
+              <tr>
+                <td style="color:#00ff41; font-weight:700;">${p.symbol}</td>
+                <td><span class="badge ${p.side === 'LONG' ? 'long' : 'short'}">${p.side}</span></td>
+                <td>${p.amount}</td>
+                <td>$${p.entry_price.toLocaleString()}</td>
+                <td>$${p.mark_price.toLocaleString()}</td>
+                <td class="${pnlCls}">${pnlSign}$${p.unrealized_pnl.toFixed(2)}</td>
+                <td class="${roeCls}">${roeSign}${p.pnl_pct}%</td>
+                <td>${p.leverage}x</td>
+              </tr>
+            `;
+          }).join("");
+        }
+
+        document.getElementById("updated-time").textContent =
+          "> last update: " + new Date().toLocaleTimeString("ko-KR", { hour12: false });
+
+      } catch (e) {
+        document.getElementById("error-area").innerHTML =
+          `<div class="error-box">> CONNECTION ERROR: ${e.message}</div>`;
+      }
+    }
+
+    loadData();
+    setInterval(loadData, 30000);
+  </script>
+</body>
+</html>
