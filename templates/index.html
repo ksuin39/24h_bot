@@ -1,147 +1,217 @@
-
 <!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>바이낸스 선물 대시보드</title>
+  <title>BINANCE FUTURES TERMINAL</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-           background: #0d0d0d; color: #e0e0e0; min-height: 100vh; padding: 24px; }
-    h1 { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: #fff; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
-    .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; padding: 16px; }
-    .card .label { font-size: 12px; color: #888; margin-bottom: 6px; }
-    .card .value { font-size: 22px; font-weight: 600; }
-    .pos-table { width: 100%; border-collapse: collapse; }
-    .pos-table th { text-align: left; font-size: 12px; color: #888; padding: 8px 12px;
-                    border-bottom: 1px solid #2a2a2a; font-weight: 500; }
-    .pos-table td { padding: 12px; font-size: 13px; border-bottom: 1px solid #1e1e1e; }
-    .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-    .long { background: #0d2e1a; color: #22c55e; }
-    .short { background: #2e0d0d; color: #ef4444; }
-    .pnl-pos { color: #22c55e; }
-    .pnl-neg { color: #ef4444; }
-    .status-green { color: #22c55e; }
-    .status-amber { color: #f59e0b; }
-    .status-red { color: #ef4444; }
-    .section-title { font-size: 14px; font-weight: 600; color: #ccc; margin-bottom: 12px; }
-    .table-wrap { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px; overflow: hidden; }
-    .refresh-btn { background: #2a2a2a; color: #ccc; border: none; padding: 8px 16px;
-                   border-radius: 6px; cursor: pointer; font-size: 13px; margin-bottom: 20px; }
-    .refresh-btn:hover { background: #333; }
-    .error-msg { color: #ef4444; background: #2e0d0d; border: 1px solid #4a1414;
-                 padding: 12px 16px; border-radius: 8px; font-size: 13px; }
-    .empty { text-align: center; padding: 32px; color: #555; font-size: 13px; }
-    .updated { font-size: 11px; color: #555; margin-left: 8px; }
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      background: #0a0a0a;
+      color: #00ff41;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .terminal {
+      max-width: 1100px;
+      margin: 0 auto;
+      background: #0d0d0d;
+      border: 1px solid #00ff41;
+      border-radius: 4px;
+      overflow: hidden;
+      box-shadow: 0 0 40px #00ff4115;
+    }
+    .title-bar {
+      background: #00ff41;
+      color: #0a0a0a;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .title-bar .right { display: flex; gap: 16px; align-items: center; }
+    .logout-btn {
+      background: #0a0a0a;
+      color: #00ff41;
+      border: none;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    .logout-btn:hover { background: #111; }
+    .body { padding: 20px; }
+
+    /* 상단 로그 */
+    .log-header { font-size: 11px; color: #00ff4166; margin-bottom: 16px; line-height: 2; }
+    .log-header .ok { color: #00ff41; }
+    .log-header .warn { color: #f0b90b; }
+    .log-header .err { color: #ff4141; }
+
+    /* 구분선 */
+    .divider { border: none; border-top: 1px solid #00ff4122; margin: 16px 0; }
+
+    /* 섹션 타이틀 */
+    .section-title {
+      font-size: 11px;
+      color: #888;
+      margin-bottom: 12px;
+      letter-spacing: 0.08em;
+    }
+    .section-title span { color: #00ff41; }
+
+    /* 요약 카드 그리드 */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .stat-card {
+      background: #111;
+      border: 1px solid #00ff4133;
+      border-radius: 2px;
+      padding: 12px 14px;
+    }
+    .stat-card .label {
+      font-size: 10px;
+      color: #888;
+      margin-bottom: 8px;
+      letter-spacing: 0.06em;
+    }
+    .stat-card .value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #00ff41;
+    }
+    .stat-card .unit { font-size: 11px; color: #888; margin-left: 2px; }
+    .pnl-pos { color: #00ff41; }
+    .pnl-neg { color: #ff4141; }
+    .status-green { color: #00ff41; }
+    .status-amber { color: #f0b90b; }
+    .status-red { color: #ff4141; }
+
+    /* 포지션 테이블 */
+    .table-wrap {
+      border: 1px solid #00ff4133;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead tr { background: #111; }
+    th {
+      text-align: left;
+      padding: 10px 14px;
+      font-size: 10px;
+      color: #888;
+      letter-spacing: 0.08em;
+      border-bottom: 1px solid #00ff4122;
+      font-weight: 400;
+    }
+    td { padding: 11px 14px; border-bottom: 1px solid #00ff4111; color: #ccc; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: #00ff410a; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      border-radius: 2px;
+      letter-spacing: 0.06em;
+    }
+    .long { background: #00ff4122; color: #00ff41; border: 1px solid #00ff4144; }
+    .short { background: #ff414122; color: #ff4141; border: 1px solid #ff414144; }
+    .empty-row td { text-align: center; color: #00ff4144; padding: 32px; font-size: 12px; }
+
+    /* 하단 바 */
+    .footer-bar {
+      margin-top: 16px;
+      font-size: 10px;
+      color: #00ff4144;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .refresh-btn {
+      background: transparent;
+      border: 1px solid #00ff4144;
+      color: #00ff4188;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      padding: 5px 12px;
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all 0.15s;
+    }
+    .refresh-btn:hover { border-color: #00ff41; color: #00ff41; }
+    .error-box {
+      background: #1a0000;
+      border: 1px solid #ff414144;
+      color: #ff4141;
+      font-size: 11px;
+      padding: 12px 14px;
+      border-radius: 2px;
+      margin-bottom: 16px;
+    }
+    .blink { animation: blink 1s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
   </style>
 </head>
 <body>
-  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
-    <h1 style="margin:0;">📊 바이낸스 선물 대시보드</h1>
-    <a href="/logout" style="background:#2a2a2a; color:#ccc; text-decoration:none;
-     padding:8px 16px; border-radius:6px; font-size:13px; border:1px solid #333;">
-    🔓 로그아웃
-    </a>
-  </div>
-  <button class="refresh-btn" onclick="loadData()">🔄 새로고침</button>
-  <span class="updated" id="updated-time"></span>
+  <div class="terminal">
+    <div class="title-bar">
+      <span>■ BINANCE FUTURES TERMINAL v1.0 — LIVE</span>
+      <div class="right">
+        <span id="clock" style="font-size:11px;"></span>
+        <button class="logout-btn" onclick="location.href='/logout'">[DISCONNECT]</button>
+      </div>
+    </div>
 
-  <div id="error-area"></div>
+    <div class="body">
+      <div class="log-header" id="log-header">
+        <div>[ <span class="ok">  OK  </span> ] Session authenticated</div>
+        <div>[ <span class="ok">  OK  </span> ] Connected to fapi.binance.com</div>
+        <div>[ <span class="warn"> WAIT </span> ] Fetching account data...</div>
+      </div>
 
-  <div class="grid" id="summary-cards">
-    <div class="card"><div class="label">로딩 중...</div><div class="value">-</div></div>
-  </div>
+      <div id="error-area"></div>
 
-  <div class="section-title">현재 포지션</div>
-  <div class="table-wrap">
-    <table class="pos-table">
-      <thead>
-        <tr>
-          <th>종목</th><th>방향</th><th>수량</th><th>진입가</th>
-          <th>현재가</th><th>미실현 손익</th><th>수익률</th><th>레버리지</th>
-        </tr>
-      </thead>
-      <tbody id="pos-body"><tr><td colspan="8" class="empty">로딩 중...</td></tr></tbody>
-    </table>
-  </div>
+      <div class="section-title">// <span>ACCOUNT SUMMARY</span></div>
+      <div class="summary-grid" id="summary-cards">
+        <div class="stat-card"><div class="label">LOADING</div><div class="value">—</div></div>
+      </div>
 
-  <script>
-    async function loadData() {
-      document.getElementById("error-area").innerHTML = "";
-      try {
-        const res = await fetch("/api/futures");
-        const data = await res.json();
+      <hr class="divider">
 
-        if (!data.success) {
-          document.getElementById("error-area").innerHTML =
-            `<div class="error-msg">⚠️ ${data.error}</div>`;
-          return;
-        }
-
-        const acc = data.account;
-
-        // 요약 카드
-        document.getElementById("summary-cards").innerHTML = `
-          <div class="card">
-            <div class="label">총 지갑 잔고</div>
-            <div class="value">$${acc.total_balance.toLocaleString()}</div>
-          </div>
-          <div class="card">
-            <div class="label">마진 잔고</div>
-            <div class="value">$${acc.margin_balance.toLocaleString()}</div>
-          </div>
-          <div class="card">
-            <div class="label">가용 잔고</div>
-            <div class="value">$${acc.available_balance.toLocaleString()}</div>
-          </div>
-          <div class="card">
-            <div class="label">미실현 손익</div>
-            <div class="value ${acc.unrealized_pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">
-              ${acc.unrealized_pnl >= 0 ? '+' : ''}$${acc.unrealized_pnl.toFixed(2)}
-            </div>
-          </div>
-          <div class="card">
-            <div class="label">자금 상태</div>
-            <div class="value status-${acc.fund_color}">${acc.fund_status}</div>
-          </div>
-        `;
-
-        // 포지션 테이블
-        const tbody = document.getElementById("pos-body");
-        if (data.positions.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" class="empty">현재 보유 포지션 없음</td></tr>';
-        } else {
-          tbody.innerHTML = data.positions.map(p => `
+      <div class="section-title">// <span>OPEN POSITIONS</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
             <tr>
-              <td><b>${p.symbol}</b></td>
-              <td><span class="badge ${p.side === 'LONG' ? 'long' : 'short'}">${p.side}</span></td>
-              <td>${p.amount}</td>
-              <td>$${p.entry_price.toLocaleString()}</td>
-              <td>$${p.mark_price.toLocaleString()}</td>
-              <td class="${p.unrealized_pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">
-                ${p.unrealized_pnl >= 0 ? '+' : ''}$${p.unrealized_pnl.toFixed(2)}
-              </td>
-              <td class="${p.pnl_pct >= 0 ? 'pnl-pos' : 'pnl-neg'}">
-                ${p.pnl_pct >= 0 ? '+' : ''}${p.pnl_pct}%
-              </td>
-              <td>${p.leverage}x</td>
+              <th>SYMBOL</th>
+              <th>SIDE</th>
+              <th>SIZE</th>
+              <th>ENTRY PRICE</th>
+              <th>MARK PRICE</th>
+              <th>UNREAL PNL</th>
+              <th>ROE%</th>
+              <th>LEVERAGE</th>
             </tr>
-          `).join("");
-        }
+          </thead>
+          <tbody id="pos-body">
+            <tr class="empty-row"><td colspan="8">> loading positions...</td></tr>
+          </tbody>
+        </table>
+      </div>
 
-        document.getElementById("updated-time").textContent =
-          "마지막 업데이트: " + new Date().toLocaleTimeString("ko-KR");
-
-      } catch (e) {
-        document.getElementById("error-area").innerHTML =
-          `<div class="error-msg">⚠️ 서버 연결 실패: ${e.message}</div>`;
-      }
-    }
-
-    loadData();
-    setInterval(loadData, 30000); // 30초마다 자동 갱신
-  </script>
-</body>
-</html>
+      <div class="footer-bar">
+        <span id="updated-time">> last update: —</span>
+        <button class="refresh-btn" onclick="loadData()">[REFRESH]</button>
+      </div>
+    </d
