@@ -1,0 +1,28 @@
+name: AI Replay Train (압축 학습)
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "과거 며칠치 데이터로 학습할지"
+        default: "10"
+      epochs:
+        description: "몇 번 반복 재생할지"
+        default: "5"
+  push:
+    branches: [main]
+    paths:
+      - 'replay_train.py'
+      - '.github/workflows/replay.yml'
+
+jobs:
+  replay:
+    name: 압축 학습 (${{ inputs.days || '10' }}일치 x ${{ inputs.epochs || '5' }}회)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python replay_train.py --days ${{ inputs.days || '10' }} --epochs ${{ inputs.epochs || '5' }}
