@@ -1,0 +1,119 @@
+name: AI Trader 24h
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'ai_trader_24h.py'
+      - '.github/workflows/ai-trader.yml'
+
+concurrency:
+  group: ai-trader
+  cancel-in-progress: false
+
+jobs:
+  part1:
+    name: 학습 1/5 (약 4.8시간)
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install websockets
+      - run: python ai_trader_24h.py --hours 4.8 --source coinbase
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: state-1
+          path: ai_trader_output
+
+  part2:
+    name: 학습 2/5 (약 4.8시간)
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    needs: part1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install websockets
+      - uses: actions/download-artifact@v4
+        with:
+          name: state-1
+          path: ai_trader_output
+      - run: python ai_trader_24h.py --hours 4.8 --source coinbase
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: state-2
+          path: ai_trader_output
+
+  part3:
+    name: 학습 3/5 (약 4.8시간)
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    needs: part2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install websockets
+      - uses: actions/download-artifact@v4
+        with:
+          name: state-2
+          path: ai_trader_output
+      - run: python ai_trader_24h.py --hours 4.8 --source coinbase
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: state-3
+          path: ai_trader_output
+
+  part4:
+    name: 학습 4/5 (약 4.8시간)
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    needs: part3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install websockets
+      - uses: actions/download-artifact@v4
+        with:
+          name: state-3
+          path: ai_trader_output
+      - run: python ai_trader_24h.py --hours 4.8 --source coinbase
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: state-4
+          path: ai_trader_output
+
+  part5:
+    name: 학습 5/5 (약 4.8시간)
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    needs: part4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install websockets
+      - uses: actions/download-artifact@v4
+        with:
+          name: state-4
+          path: ai_trader_output
+      - run: python ai_trader_24h.py --hours 4.8 --source coinbase
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: state-5
+          path: ai_trader_output
