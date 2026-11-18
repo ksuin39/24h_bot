@@ -446,7 +446,7 @@ def main():
     hist_rows = "\n".join(
         f"| {h['day']} | {h['date'][:10]} | {h['total_gens']} | {h['champion_score']:+.3f} | "
         f"{pct(h['champion_avg_daily'], 3)} | {h['champion_hit_days']}/{h['test_days']} | "
-        f"{h['lev']:.0f}배 / {h['frac']*100:.0f}% | {h['champion_liquidations']} | {'교체' if h['replaced'] else '유지'} |"
+        f"{h.get('lev', 1):.0f}배 / {h.get('frac', 1)*100:.0f}% | {h.get('champion_liquidations', 0)} | {'교체' if h['replaced'] else '유지'} |"
         for h in hist[-30:][::-1])
     md = f"""# 🧬 진화형 데이트레이딩 AI 리포트
 
