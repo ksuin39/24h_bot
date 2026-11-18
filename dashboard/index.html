@@ -80,10 +80,16 @@
     <div class="chart" style="height:240px"><canvas id="cDaily"></canvas></div>
   </div>
 
+  <div class="card">
+    <h2>🗓️ 월별 성적표 — 지난 2년, 달마다 새 계좌로 시작 (상승장·하락장 어디서 강한지)</h2>
+    <div class="chart" style="height:260px"><canvas id="cMonth"></canvas></div>
+    <div class="note" id="monthNote">-</div>
+  </div>
+
   <div class="card two3">
     <h2>📈 오늘의 진화 과정 (세대별 학습 점수)</h2>
     <div class="chart"><canvas id="cGen"></canvas></div>
-    <div class="note">최고 = 1등 개체, 상위 20 = 살아남는 엘리트 평균, 전체 평균 = 200마리 평균. 오를수록 학습 구간에서 똑똑해지는 중.</div>
+    <div class="note">세대마다 2년 중 랜덤한 7일 구간 6개에서 시합 (구간이 매번 바뀌어 외우기 불가). 최고 = 1등, 상위 20 = 살아남는 엘리트 평균. <span id="winNote"></span></div>
   </div>
 
   <div class="card third">
@@ -103,8 +109,9 @@
     <div class="note" style="text-align:center" id="nowInfo">-</div>
     <div class="score-row" style="margin-top:10px"><span>레버리지 / 계좌 투입</span><span id="nLev">-</span></div>
     <div class="score-row"><span>진입 문턱(확신 필요도)</span><span id="nTh">-</span></div>
-    <div class="score-row"><span>익절 / 손절 / 청산</span><span id="nWin">-</span></div>
+    <div class="score-row"><span>익절 / 작은 손절 / 큰 손절 / 청산</span><span id="nWin">-</span></div>
     <div class="score-row"><span>하루 평균 거래 / 날 넘김</span><span id="nFreq">-</span></div>
+    <div class="score-row"><span>최장 연속 목표 달성</span><span id="nStreak">-</span></div>
     <div class="score-row"><span>낸 수수료 (계좌 대비)</span><span id="nFee" class="neg">-</span></div>
   </div>
 
@@ -132,7 +139,7 @@
   <div class="card">
     <h2>📋 일차별 기록</h2>
     <div class="tablewrap"><table id="hist"><thead><tr>
-      <th>일차</th><th>날짜</th><th>누적 세대</th><th>챔피언</th><th>하루 점수</th><th>하루 평균 수익</th><th>목표 달성일</th><th>레버리지/투입</th><th>청산</th><th>하루 거래</th><th>결과</th>
+      <th>일차</th><th>날짜</th><th>누적 세대</th><th>챔피언</th><th>하루 점수</th><th>하루 평균 수익</th><th>목표 달성일</th><th>플러스 달</th><th>레버리지/투입</th><th>청산</th><th>결과</th>
     </tr></thead><tbody></tbody></table></div>
   </div>
 </main>
@@ -231,12 +238,22 @@ async function loadData(){
   $("kNext").textContent = nextRun();
 
   // 점수 구성
-  const rules = L.settings.points;
+  const rules = L.settings.rules;
   const entries = Object.entries(c.cats);
   $("sCats").innerHTML = entries.map(([k,v])=>`<div class="score-row"><span>${k} <span class="muted" style="font-size:11px">(${rules[k]})</span></span>
       <span class="${cls(v)}">${fp(v,3)}</span></div>`).join("") +
     `<div class="score-row"><span>= 하루 점수</span><span class="${cls(c.score)}">${fp(c.score,3)}</span></div>`;
-  $("sInfo").textContent = `거래 크기 = min(1, 투입비율×레버리지) · 수수료 ${(L.settings.fee*100).toFixed(2)}% (포지션 금액 기준, 진입·청산 각각) · 하루 경계 오전 9시`;
+  $("sInfo").textContent = `모든 %는 계좌 대비 · 수수료 ${(L.settings.fee*100).toFixed(2)}% (포지션 금액 기준, 진입·청산 각각) · 하루 정산 오전 9시`;
+  $("winNote").textContent = `마지막 세대 구간: ${L.last_windows.join(", ")}`;
+  const M = L.months;
+  const pm = M.filter(m=>m.score>0).length;
+  drawChart("cMonth", {data:{labels:M.map(m=>m.month), datasets:[
+    {type:"bar", label:"AI 하루 점수", data:M.map(m=>m.score), yAxisID:"y",
+     backgroundColor:M.map(m=>m.score>0?"rgba(63,185,80,.7)":"rgba(248,81,73,.55)")},
+    {type:"line", label:"AI 월 수익 %", data:M.map(m=>m.ret*100), yAxisID:"y2", borderColor:"#e3b341", pointRadius:2},
+    {type:"line", label:"비트코인 월 등락 %", data:M.map(m=>m.btc*100), yAxisID:"y2", borderColor:"#8b949e", borderDash:[4,3], pointRadius:2},
+  ]}, options:{scales:{y:{title:{display:true,text:"하루 점수"}}, y2:{position:"right", grid:{drawOnChartArea:false}, title:{display:true,text:"%"}}}}});
+  $("monthNote").textContent = `플러스인 달 ${pm}/${M.length}개월 · 목표 달성일 합계 ${M.reduce((a,m)=>a+m.hit_days,0)}일 · 청산 ${M.reduce((a,m)=>a+m.liq,0)}회 · 학습 데이터 ${L.data.from} ~ ${L.data.to} (최근 ${L.data.val_days+L.data.test_days}일은 학습 제외)`;
 
   // 지금 판단
   const p = c.now_position;
@@ -244,7 +261,8 @@ async function loadData(){
   $("nowInfo").textContent = `마지막 데이터 기준 BTC $${Math.round(L.last_price).toLocaleString()} (${L.updated} 갱신)`;
   $("nTh").textContent = c.threshold.toFixed(2);
   $("nLev").textContent = `${c.lev}배 / ${Math.round(c.frac*100)}%`;
-  $("nWin").innerHTML = `${c.wins} / ${c.losses} / <span class="${c.liquidations?"neg":""}">${c.liquidations}</span>`;
+  $("nWin").innerHTML = `${c.wins} / ${c.small_losses} / ${c.big_losses} / <span class="${c.liquidations?"neg":""}">${c.liquidations}</span>`;
+  $("nStreak").textContent = `${c.best_streak}일`;
   $("nFreq").textContent = `${c.trades_per_day.toFixed(1)}회 / ${c.overnights}번`;
   $("nFee").textContent = c.fee_pct.toFixed(2) + "%";
 
@@ -272,10 +290,10 @@ async function loadData(){
 
   // 특징
   const fs = [...c.features].sort((a,b)=>(b.used-a.used)||(b.weight-a.weight));
-  $("feats").innerHTML = fs.map(f=>`<div class="feat ${f.used?"":"off"}"><span>${f.name}</span>
+  $("feats").innerHTML = fs.map(f=>`<div class="feat ${f.used?"":"off"}"><span>${f.state?"🧍 ":""}${f.name}</span>
     <div class="bar"><i style="width:${f.used?Math.max(3,f.weight*100):0}%"></i></div>
     <span class="muted">${f.used?Math.round(f.weight*100):"안봄"}</span></div>`).join("") +
-    `<div class="note">보라색이 길수록 판단에 크게 쓰는 정보. 흐린 항목은 진화 과정에서 '안 보기로' 한 정보.</div>`;
+    `<div class="note">보라색이 길수록 판단에 크게 쓰는 정보. 🧍 = 내 상태(오늘 내 수익, 포지션 손익). 흐린 항목은 진화 과정에서 '안 보기로' 한 정보.</div>`;
 
   // 분포
   const ps = L.population_scores.filter(x=>x>-50);
@@ -290,8 +308,8 @@ async function loadData(){
     <td>${h.day}</td><td>${h.date}</td><td>${h.total_gens}</td><td>${h.champion_id}</td>
     <td class="${cls(h.champion_score)}">${fp(h.champion_score,3)}</td>
     <td class="${cls(h.champion_avg_daily)}">${fmtPct(h.champion_avg_daily,3)}</td>
-    <td>${h.champion_hit_days}/${h.test_days}</td><td>${h.lev}배/${Math.round(h.frac*100)}%</td><td>${h.champion_liquidations}</td>
-    <td>${(h.champion_trades/h.test_days).toFixed(1)}</td><td>${h.replaced?"🆕 교체":"🛡️ 유지"}</td></tr>`).join("");
+    <td>${h.champion_hit_days}/${h.test_days}</td><td>${h.months_positive}/${h.months_total}</td><td>${h.lev}배/${Math.round(h.frac*100)}%</td><td>${h.champion_liquidations}</td>
+    <td>${h.replaced?"🆕 교체":"🛡️ 유지"}</td></tr>`).join("");
 }
 
 async function refresh(){ await Promise.all([loadData(), loadRuns()]); }
