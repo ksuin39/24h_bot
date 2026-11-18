@@ -17,10 +17,11 @@ AI 200마리가 각자 유전자로
   보유 중 손실 상태                    -0.02 x 손실률(계좌 대비 %, 레버리지 반영) x 보유 일수
   하루를 넘겨 보유 (날 넘길 때마다)    -0.5    (하루 경계 = 오전 9시 KST, OKX 일봉)
   하루 안에 포지션 종료               +0.5  (x 거래 크기)
-  익절 종료 (수수료 빼고 플러스)       +0.5  (x 거래 크기)
-  손절 종료                          -0.8  (x 거래 크기)
+  익절 종료 (수수료 빼고 플러스)       +0.5 x min(1, 순수익%/1%)   → 계좌 +1% 이상 벌어야 만점
+  손절 종료                          -0.8 x max(1, 순손실%/1%)   → -1%보다 크게 잃으면 비례해서 커짐
   청산 당함                          -10    (투입한 증거금 전부 잃음)
-  수수료                             -10 x 낸 수수료(계좌 대비 %)
+  수수료                             -5 x 낸 수수료(계좌 대비 %)
+  * 익절/손절은 계좌 대비 순손익 크기로 계산 (작게 익절하고 손실은 버티는 꼼수 방지)
   * 거래 크기 = min(1, 투입비율 x 레버리지): 계좌 10%만 1배로 걸면 0.1배만 인정
     (작게 걸고 수십 번 거래해 고정 보너스만 챙기는 꼼수 방지)
   * 보유 중 점수는 5분마다 1/288씩 = 하루 보유 시 위 값 그대로
@@ -57,7 +58,7 @@ P_SAMEDAY    = 0.5
 P_TAKEPROFIT = 0.5
 P_STOPLOSS   = -0.8
 P_LIQUIDATED = -10.0
-P_FEE_W      = 10.0
+P_FEE_W      = 5.0     # 수수료 감점 세기 (본전 승률 약 54%)
 
 OUT          = "evolution"
 KST          = timezone(timedelta(hours=9))
@@ -187,7 +188,7 @@ def simulate(sig, close, high, low, day, lev, frac, fee, mm,
     eq = 1.0
     size = min(1.0, frac * lev)    # 거래 크기 비율: 진입/종료/익절/손절 점수에 곱함
     d = 0                          # 현재 포지션 방향
-    entry = 0.0; margin = 0.0; notional = 0.0; entry_day = 0; entry_fee = 0.0; liq = 0.0
+    entry = 0.0; margin = 0.0; notional = 0.0; entry_day = 0; entry_fee = 0.0; liq = 0.0; start_eq = 1.0
     for t in range(n):
         if eq <= 0.01:             # 파산
             stats[7] = 1.0
@@ -224,13 +225,17 @@ def simulate(sig, close, high, low, day, lev, frac, fee, mm,
                 pts[t] += fp; cat[8] += fp
                 if day[t] == entry_day:
                     v = p_sd * size; pts[t] += v; cat[4] += v; stats[5] += 1
-                if pnl - xfee - entry_fee > 0:
-                    v = p_tp * size; pts[t] += v; cat[5] += v; stats[1] += 1
+                net_pct = (pnl - xfee - entry_fee) / start_eq * 100.0   # 이번 거래 순손익 (계좌 대비 %)
+                if net_pct > 0:
+                    v = p_tp * min(1.0, net_pct / 1.0)                  # +1% 이상 벌어야 만점
+                    pts[t] += v; cat[5] += v; stats[1] += 1
                 else:
-                    v = p_sl * size; pts[t] += v; cat[6] += v; stats[2] += 1
+                    v = p_sl * max(1.0, -net_pct / 1.0)                 # -1%보다 크게 잃으면 비례해서 커짐
+                    pts[t] += v; cat[6] += v; stats[2] += 1
                 d = 0
             if want != 0 and eq > 0.01:   # 새 포지션 진입
                 d = want
+                start_eq = eq
                 entry = close[t]
                 margin = eq * frac
                 notional = margin * lev
@@ -421,7 +426,7 @@ def main():
         "settings": {"fee": FEE, "daily_target": DAILY_TARGET, "max_lev": MAX_LEV,
                      "points": {"진입": f"+{P_ENTRY} × 크기", "보유 중 수익": f"+{P_HOLD_WIN} × 수익률% × 보유일수",
                                 "보유 중 손실": f"−{P_HOLD_LOSS} × 손실률% × 보유일수", "하루 넘김": f"{P_OVERNIGHT}",
-                                "당일 종료": f"+{P_SAMEDAY} × 크기", "익절": f"+{P_TAKEPROFIT} × 크기", "손절": f"{P_STOPLOSS} × 크기",
+                                "당일 종료": f"+{P_SAMEDAY} × 크기", "익절": f"+{P_TAKEPROFIT} × min(1, 수익%/1%)", "손절": f"{P_STOPLOSS} × max(1, 손실%/1%)",
                                 "청산": f"{P_LIQUIDATED}", "수수료": f"−{P_FEE_W:g} × 수수료%"}},
         "replaced": bool(replaced),
         "champion": {"id": state["champion_id"], "born": state["champion_born"],
