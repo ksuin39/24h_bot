@@ -15,6 +15,9 @@ on:
       - 'replay_train.py'
       - '.github/workflows/replay.yml'
 
+permissions:
+  contents: write
+
 jobs:
   replay:
     name: 압축 학습 (${{ inputs.days || '10' }}일치 x ${{ inputs.epochs || '5' }}회)
@@ -26,3 +29,11 @@ jobs:
         with:
           python-version: '3.12'
       - run: python replay_train.py --days ${{ inputs.days || '10' }} --epochs ${{ inputs.epochs || '5' }}
+      - name: 결과를 저장소에 저장
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add results/replay_result.md
+          git commit -m "replay result" || exit 0
+          git pull --rebase
+          git push

@@ -168,6 +168,9 @@ def main():
     ]
     out = "\n".join(md)
     print(out)
+    os.makedirs("results", exist_ok=True)
+    with open("results/replay_result.md", "w", encoding="utf-8") as f:
+        f.write(f"_실행 시각: {datetime.now(timezone(timedelta(hours=9))):%Y-%m-%d %H:%M} (KST)_\n\n" + out + "\n")
     summ = os.environ.get("GITHUB_STEP_SUMMARY")
     if summ:
         with open(summ, "a", encoding="utf-8") as f:
