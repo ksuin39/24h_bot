@@ -30,6 +30,7 @@ GENERATIONS = 300     # 하루 실행당 진화 세대 수
 IMMIGRANTS  = 0.15    # 매일 새로 섞어 넣는 랜덤 개체 비율 (다양성 유지)
 HIDDEN      = 4       # 신경망 은닉 뉴런 수
 FEE         = 0.0005  # 포지션 변경 수수료 0.05%
+PENALTY_W   = 1.0     # 손실 보유 감점 세기: '손실 깊이 x 손실로 버틴 일수' 만큼 점수 차감
 OUT         = "evolution"
 KST         = timezone(timedelta(hours=9))
 
@@ -127,17 +128,32 @@ def evaluate(g, X, ret, curve=False):
     change = np.abs(np.diff(np.concatenate([[0.0], pos])))
     pnl = pos * ret - FEE * change
     logp = np.log1p(pnl)
+
+    # --- 손실 보유 감점 ---
+    # 포지션을 잡은 뒤 '진입 시점 대비 손익'이 마이너스인 동안, 매 5분마다
+    # (손실 깊이 / 하루 봉 수) 만큼 감점 → 2% 손실로 하루 버티면 2점(%p) 감점
+    c = np.cumsum(logp)
+    c_prev = np.concatenate([[0.0], c[:-1]])
+    start = np.maximum.accumulate(np.where(change > 0, np.arange(len(pos)), 0))
+    unreal = c - c_prev[start]                       # 진입 후 누적 손익
+    underwater = np.where(pos != 0, np.maximum(0.0, -unreal), 0.0)
+    pen = PENALTY_W * underwater / 288
+
     out = {"ret": float(np.expm1(logp.sum())), "trades": int((change > 0).sum()),
-           "logp": logp}
+           "logp": logp, "pen": pen,
+           "penalty": float(pen.sum()),
+           "score": float(logp.sum() - pen.sum()),   # 최종 점수 = 수익(로그) - 감점
+           "max_underwater": float(underwater.max()) if len(underwater) else 0.0}
     if curve:
-        out["curve"] = np.exp(np.cumsum(logp))
+        out["curve"] = np.exp(c)
     return out
 
 
 def fitness(g, X, ret):
-    """학습 점수: 4구간으로 나눠 '꾸준히' 잘해야 높음 (한 번 운 좋은 대박 방지)"""
-    logp = evaluate(g, X, ret)["logp"]
-    chunks = np.array([c.sum() for c in np.array_split(logp, 4)])
+    """학습 점수: (수익 - 손실보유 감점)을 4구간으로 나눠 '꾸준히' 잘해야 높음"""
+    e = evaluate(g, X, ret)
+    net = e["logp"] - e["pen"]
+    chunks = np.array([c.sum() for c in np.array_split(net, 4)])
     return float(chunks.mean() - 0.5 * chunks.std())
 
 
@@ -218,7 +234,7 @@ def main():
 
     # 도전자 선발: 학습 상위 10마리 중 검증 구간 최고
     top = pop[:10]
-    val_scores = [evaluate(g, X[va], ret[va])["ret"] for g in top]
+    val_scores = [evaluate(g, X[va], ret[va])["score"] for g in top]
     ch = top[int(np.argmax(val_scores))]
 
     # 시험 구간 대결
@@ -227,7 +243,7 @@ def main():
     cp_te = evaluate(champ, X[te], ret[te], curve=True) if champ is not None else None
     bh = float(close[te][-1] / close[te][0] - 1)
 
-    replaced = cp_te is None or ch_te["ret"] > cp_te["ret"]
+    replaced = cp_te is None or ch_te["score"] > cp_te["score"]
     if replaced:
         state["champion"] = ch.tolist()
         state["champion_id"] = f"G{state['total_gens']}-D{day}"
@@ -242,6 +258,7 @@ def main():
     hist.append({"day": day, "date": datetime.now(KST).strftime("%Y-%m-%d %H:%M"),
                  "total_gens": state["total_gens"], "champion_id": state["champion_id"],
                  "champion_test": cp_te["ret"], "champion_trades": cp_te["trades"],
+                 "champion_score": cp_te["score"], "champion_penalty": cp_te["penalty"],
                  "challenger_test": ch_te["ret"], "challenger_val": max(val_scores),
                  "replaced": replaced, "buyhold_test": bh, "features": feats})
     save_json(f"{OUT}/history.json", hist)
@@ -253,7 +270,8 @@ def main():
     curve = cp_te["curve"]
     pts = [curve[int(i * len(curve) / 40)] * 100 for i in range(40)] + [curve[-1] * 100]
     hist_rows = "\n".join(
-        f"| {h['day']} | {h['date'][:10]} | {h['total_gens']} | {pct(h['champion_test'])} | "
+        f"| {h['day']} | {h['date'][:10]} | {h['total_gens']} | "
+        f"{(h['champion_score']*100 if 'champion_score' in h else float('nan')):+.2f} | {pct(h['champion_test'])} | "
         f"{pct(h['buyhold_test'])} | {h['champion_trades']} | {'교체' if h['replaced'] else '유지'} |"
         for h in hist[-30:][::-1])
     trend = ", ".join(f"{h['champion_test']*100:.2f}" for h in hist[-30:])
@@ -266,12 +284,15 @@ _마지막 실행: {datetime.now(KST):%Y-%m-%d %H:%M} KST · {day}일차 · 누�
 
 ## 오늘의 결과
 
-| | 시험 구간 수익률 | 거래 횟수 |
-|---|---|---|
-| 👑 챔피언 `{state['champion_id']}` | **{pct(cp_te['ret'])}** | {cp_te['trades']} |
-| 🥊 오늘의 도전자 | {pct(ch_te['ret'])} | {ch_te['trades']} |
-| 그냥 보유 | {pct(bh)} | 1 |
-| 아무것도 안 함 | +0.00% | 0 |
+| | **점수** | 수익률 | 손실 보유 감점 | 최대 손실 상태 | 거래 |
+|---|---|---|---|---|---|
+| 👑 챔피언 `{state['champion_id']}` | **{cp_te['score']*100:+.2f}** | {pct(cp_te['ret'])} | -{cp_te['penalty']*100:.2f} | -{cp_te['max_underwater']*100:.2f}% | {cp_te['trades']} |
+| 🥊 오늘의 도전자 | {ch_te['score']*100:+.2f} | {pct(ch_te['ret'])} | -{ch_te['penalty']*100:.2f} | -{ch_te['max_underwater']*100:.2f}% | {ch_te['trades']} |
+| 그냥 보유 | - | {pct(bh)} | - | - | 1 |
+| 아무것도 안 함 | +0.00 | +0.00% | 0 | 0% | 0 |
+
+> **점수 = 수익률(로그) − 손실 보유 감점.** 포지션을 잡고 손실 상태로 버틴 시간만큼 깎입니다
+> (예: 2% 손실 상태로 하루 버티면 −2점). 챔피언 교체도 이 점수로 결정합니다.
 
 - 결과: **{'도전자가 이겨서 챔피언 교체!' if replaced and day > 1 else '첫 챔피언 등장' if day == 1 else '챔피언 방어 성공'}**
 - 챔피언이 보는 정보 {nfeat}개 중 가장 중요하게 쓰는 것: {', '.join(feats) if feats else '없음 (아무 정보도 안 봄)'}
@@ -292,8 +313,8 @@ xychart-beta
     line [{trend}]
 ```
 
-| 일차 | 날짜 | 누적 세대 | 챔피언 수익률 | 그냥 보유 | 거래 | 결과 |
-|---|---|---|---|---|---|---|
+| 일차 | 날짜 | 누적 세대 | 챔피언 점수 | 챔피언 수익률 | 그냥 보유 | 거래 | 결과 |
+|---|---|---|---|---|---|---|---|
 {hist_rows}
 """
     with open(f"{OUT}/README.md", "w", encoding="utf-8") as f:
