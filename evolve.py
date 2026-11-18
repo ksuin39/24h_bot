@@ -271,7 +271,7 @@ def main():
     pts = [curve[int(i * len(curve) / 40)] * 100 for i in range(40)] + [curve[-1] * 100]
     hist_rows = "\n".join(
         f"| {h['day']} | {h['date'][:10]} | {h['total_gens']} | "
-        f"{(h['champion_score']*100 if 'champion_score' in h else float('nan')):+.2f} | {pct(h['champion_test'])} | "
+        f"{(format(h['champion_score']*100, '+.2f') if 'champion_score' in h else '-')} | {pct(h['champion_test'])} | "
         f"{pct(h['buyhold_test'])} | {h['champion_trades']} | {'교체' if h['replaced'] else '유지'} |"
         for h in hist[-30:][::-1])
     trend = ", ".join(f"{h['champion_test']*100:.2f}" for h in hist[-30:])
