@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install numpy pandas
+      - run: pip install numpy pandas numba
       - run: python evolve.py
       - name: 진화 결과 저장
         run: |

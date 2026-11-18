@@ -57,7 +57,7 @@
 <body>
 <header>
   <h1>🧬 진화형 데이트레이딩 AI 대시보드
-    <small>목표: 하루 +1% · BTC 모의투자 · 매일 오전 9시 강제 청산 · 실제 주문 없음 · 1분마다 자동 새로고침</small>
+    <small>목표: 하루 +1% · 레버리지 최대 20배 · BTC 모의투자 · 실제 주문 없음 · 1분마다 자동 새로고침</small>
   </h1>
   <div class="status"><span class="dot" id="dot"></span><span id="statusText">상태 확인 중…</span></div>
 </header>
@@ -87,12 +87,8 @@
   </div>
 
   <div class="card third">
-    <h2>🧮 챔피언 하루 점수 구성 (시험 구간 평균)</h2>
-    <div class="score-row"><span>하루 평균 수익</span><span id="sRet">-</span></div>
-    <div class="score-row"><span>＋ 수익 보너스 (플러스면 2배)</span><span id="sBon" class="pos">-</span></div>
-    <div class="score-row"><span>＋ 목표 달성 보너스</span><span id="sHit" class="pos">-</span></div>
-    <div class="score-row"><span>－ 손실 보유 감점</span><span id="sPen" class="neg">-</span></div>
-    <div class="score-row"><span>= 하루 점수</span><span id="sTot">-</span></div>
+    <h2>🧮 챔피언 하루 점수 구성 (시험 구간 하루 평균)</h2>
+    <div id="sCats"></div>
     <div class="note" id="sInfo">-</div>
   </div>
 
@@ -105,10 +101,11 @@
     <h2>🤖 지금 챔피언이라면?</h2>
     <div class="now" id="nowPos">-</div>
     <div class="note" style="text-align:center" id="nowInfo">-</div>
-    <div class="score-row" style="margin-top:10px"><span>진입 문턱(확신 필요도)</span><span id="nTh">-</span></div>
-    <div class="score-row"><span>시험 구간 거래 / 승리</span><span id="nWin">-</span></div>
-    <div class="score-row"><span>하루 평균 거래 / 평균 보유</span><span id="nFreq">-</span></div>
-    <div class="score-row"><span>최대 손실 상태</span><span id="nUw" class="neg">-</span></div>
+    <div class="score-row" style="margin-top:10px"><span>레버리지 / 계좌 투입</span><span id="nLev">-</span></div>
+    <div class="score-row"><span>진입 문턱(확신 필요도)</span><span id="nTh">-</span></div>
+    <div class="score-row"><span>익절 / 손절 / 청산</span><span id="nWin">-</span></div>
+    <div class="score-row"><span>하루 평균 거래 / 날 넘김</span><span id="nFreq">-</span></div>
+    <div class="score-row"><span>낸 수수료 (계좌 대비)</span><span id="nFee" class="neg">-</span></div>
   </div>
 
   <div class="card half">
@@ -135,7 +132,7 @@
   <div class="card">
     <h2>📋 일차별 기록</h2>
     <div class="tablewrap"><table id="hist"><thead><tr>
-      <th>일차</th><th>날짜</th><th>누적 세대</th><th>챔피언</th><th>하루 점수</th><th>하루 평균 수익</th><th>목표 달성일</th><th>손실일</th><th>하루 거래</th><th>결과</th>
+      <th>일차</th><th>날짜</th><th>누적 세대</th><th>챔피언</th><th>하루 점수</th><th>하루 평균 수익</th><th>목표 달성일</th><th>레버리지/투입</th><th>청산</th><th>하루 거래</th><th>결과</th>
     </tr></thead><tbody></tbody></table></div>
   </div>
 </main>
@@ -217,7 +214,8 @@ async function loadData(){
   $("kDay").textContent = `${L.day}일차`;
   $("kGens").textContent = `누적 ${L.total_gens.toLocaleString()}세대 · 마지막 ${L.updated}`;
   const tgt = L.settings.daily_target;
-  $("kScore").innerHTML = `<span class="${cls(c.score)}">${fmtPt(c.score,3)}</span>`;
+  const fp = (x,d=2)=>(x>=0?"+":"")+x.toFixed(d);
+  $("kScore").innerHTML = `<span class="${cls(c.score)}">${fp(c.score)}</span><span class="muted" style="font-size:14px"> 점/일</span>`;
   $("kChamp").textContent = `${c.id} · ${L.replaced ? (L.day>1?"오늘 새로 등극":"첫 챔피언") : "방어 성공"}`;
   $("kAvg").innerHTML = `<span class="${cls(c.avg_daily)}">${fmtPct(c.avg_daily,3)}</span>`;
   $("kAvgS").textContent = `목표 대비 ${Math.round(Math.max(0,c.avg_daily)/tgt*100)}% · 시험 ${c.days}일 합계 ${fmtPct(c.ret)} (보유 ${fmtPct(L.buyhold)})`;
@@ -233,30 +231,30 @@ async function loadData(){
   $("kNext").textContent = nextRun();
 
   // 점수 구성
-  const lr = Math.log1p(c.avg_daily);
-  $("sRet").innerHTML = `<span class="${cls(lr)}">${fmtPt(lr,3)}</span>`;
-  $("sBon").textContent = "+" + (c.bonus*100).toFixed(3);
-  $("sHit").textContent = "+" + (c.target_bonus*100).toFixed(3);
-  $("sPen").textContent = "−" + (c.penalty*100).toFixed(3);
-  $("sTot").innerHTML = `<span class="${cls(c.score)}">${fmtPt(c.score,3)}</span>`;
-  $("sInfo").textContent = `하루 평균 수익이 플러스면 ${1+L.settings.profit_bonus}배 인정 · +1% 달성일 비율 × ${(L.settings.target_bonus*100).toFixed(1)}점 · 손실 상태로 버틴 깊이×시간만큼 감점 · 수수료 ${(L.settings.fee*100).toFixed(2)}% · 매일 오전 9시 강제 청산`;
+  const rules = L.settings.points;
+  const entries = Object.entries(c.cats);
+  $("sCats").innerHTML = entries.map(([k,v])=>`<div class="score-row"><span>${k} <span class="muted" style="font-size:11px">(${rules[k]})</span></span>
+      <span class="${cls(v)}">${fp(v,3)}</span></div>`).join("") +
+    `<div class="score-row"><span>= 하루 점수</span><span class="${cls(c.score)}">${fp(c.score,3)}</span></div>`;
+  $("sInfo").textContent = `거래 크기 = min(1, 투입비율×레버리지) · 수수료 ${(L.settings.fee*100).toFixed(2)}% (포지션 금액 기준, 진입·청산 각각) · 하루 경계 오전 9시`;
 
   // 지금 판단
   const p = c.now_position;
   $("nowPos").innerHTML = p>0 ? '<span class="pos">🟢 롱</span>' : p<0 ? '<span class="neg">🔴 숏</span>' : '<span class="muted">⚪ 관망</span>';
   $("nowInfo").textContent = `마지막 데이터 기준 BTC $${Math.round(L.last_price).toLocaleString()} (${L.updated} 갱신)`;
   $("nTh").textContent = c.threshold.toFixed(2);
-  $("nWin").textContent = `${c.trades}회 / ${c.wins}승 ${c.positions_taken?`(${Math.round(c.wins/c.positions_taken*100)}%)`:""}`;
-  $("nFreq").textContent = `${c.trades_per_day.toFixed(1)}회 / ${Math.round(c.avg_hold_min)}분`;
-  $("nUw").textContent = "−" + (c.max_underwater*100).toFixed(2) + "%";
+  $("nLev").textContent = `${c.lev}배 / ${Math.round(c.frac*100)}%`;
+  $("nWin").innerHTML = `${c.wins} / ${c.losses} / <span class="${c.liquidations?"neg":""}">${c.liquidations}</span>`;
+  $("nFreq").textContent = `${c.trades_per_day.toFixed(1)}회 / ${c.overnights}번`;
+  $("nFee").textContent = c.fee_pct.toFixed(2) + "%";
 
   // 진화 과정
   const g = L.gen_log;
   drawChart("cGen", {type:"line", data:{labels:g.map(x=>x.gen), datasets:[
-    {label:"최고", data:g.map(x=>x.best*100), borderColor:"#e3b341", pointRadius:0, borderWidth:2},
-    {label:"상위 20 평균", data:g.map(x=>x.top20*100), borderColor:"#bc8cff", pointRadius:0, borderWidth:1.5},
-    {label:"전체 평균", data:g.map(x=>x.mean*100), borderColor:"#58a6ff", pointRadius:0, borderWidth:1, borderDash:[4,3]},
-  ]}, options:{scales:{x:{title:{display:true,text:"세대"},ticks:{maxTicksLimit:10}}, y:{title:{display:true,text:"학습 점수"}}}}});
+    {label:"최고", data:g.map(x=>x.best), borderColor:"#e3b341", pointRadius:0, borderWidth:2},
+    {label:"상위 20 평균", data:g.map(x=>x.top20), borderColor:"#bc8cff", pointRadius:0, borderWidth:1.5},
+    {label:"전체 평균", data:g.map(x=>x.mean), borderColor:"#58a6ff", pointRadius:0, borderWidth:1, borderDash:[4,3]},
+  ]}, options:{scales:{x:{title:{display:true,text:"세대"},ticks:{maxTicksLimit:10}}, y:{title:{display:true,text:"학습 점수 (점/일)"}}}}});
 
   // 자산 곡선
   const tc = L.test_curve;
@@ -267,7 +265,7 @@ async function loadData(){
 
   // 날짜별
   drawChart("cHist", {data:{labels:H.map(h=>h.day+"일"), datasets:[
-    {type:"line", label:"하루 점수", data:H.map(h=>h.champion_score*100), borderColor:"#e3b341", pointRadius:3},
+    {type:"line", label:"하루 점수", data:H.map(h=>h.champion_score), borderColor:"#e3b341", pointRadius:3},
     {type:"bar", label:"하루 평균 수익 %", data:H.map(h=>h.champion_avg_daily*100), backgroundColor:H.map(h=>h.champion_avg_daily>=0?"rgba(63,185,80,.5)":"rgba(248,81,73,.5)")},
     {type:"line", label:"목표 +1%", data:H.map(()=>100*(L.settings.daily_target)), borderColor:"#3fb950", borderDash:[6,4], pointRadius:0, borderWidth:1},
   ]}, options:{scales:{y:{title:{display:true,text:"점수 / %"}}}}});
@@ -280,7 +278,7 @@ async function loadData(){
     `<div class="note">보라색이 길수록 판단에 크게 쓰는 정보. 흐린 항목은 진화 과정에서 '안 보기로' 한 정보.</div>`;
 
   // 분포
-  const ps = L.population_scores.map(x=>x*100);
+  const ps = L.population_scores.filter(x=>x>-50);
   const lo = Math.min(...ps), hi = Math.max(...ps), nb = 20, w = (hi-lo)/nb || 1;
   const bins = Array(nb).fill(0); ps.forEach(v=>bins[Math.min(nb-1, Math.floor((v-lo)/w))]++);
   drawChart("cPop", {type:"bar", data:{labels:bins.map((_,i)=>(lo+w*(i+.5)).toFixed(1)), datasets:[
@@ -290,9 +288,9 @@ async function loadData(){
   // 기록 표
   $("hist").querySelector("tbody").innerHTML = [...H].reverse().map(h=>`<tr>
     <td>${h.day}</td><td>${h.date}</td><td>${h.total_gens}</td><td>${h.champion_id}</td>
-    <td class="${cls(h.champion_score)}">${fmtPt(h.champion_score,3)}</td>
+    <td class="${cls(h.champion_score)}">${fp(h.champion_score,3)}</td>
     <td class="${cls(h.champion_avg_daily)}">${fmtPct(h.champion_avg_daily,3)}</td>
-    <td>${h.champion_hit_days}/${h.test_days}</td><td>${h.champion_loss_days}</td>
+    <td>${h.champion_hit_days}/${h.test_days}</td><td>${h.lev}배/${Math.round(h.frac*100)}%</td><td>${h.champion_liquidations}</td>
     <td>${(h.champion_trades/h.test_days).toFixed(1)}</td><td>${h.replaced?"🆕 교체":"🛡️ 유지"}</td></tr>`).join("");
 }
 
