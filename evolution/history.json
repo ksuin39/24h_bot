@@ -1,0 +1,1 @@
+[{"day": 1, "date": "2026-11-18 20:35", "total_gens": 300, "champion_id": "G300-D1", "champion_test": 0.1473523549395212, "champion_trades": 1, "challenger_test": 0.1473523549395212, "challenger_val": 0.013203860686058014, "replaced": true, "buyhold_test": -0.13553570431066098, "features": ["변동성 수준", "1일 변화", "시간대 (cos)"]}]
