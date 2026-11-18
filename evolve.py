@@ -31,6 +31,8 @@ IMMIGRANTS  = 0.15    # 매일 새로 섞어 넣는 랜덤 개체 비율 (다양
 HIDDEN      = 4       # 신경망 은닉 뉴런 수
 FEE         = 0.0005  # 포지션 변경 수수료 0.05%
 PENALTY_W   = 1.0     # 손실 보유 감점 세기: '손실 깊이 x 손실로 버틴 일수' 만큼 점수 차감
+PROFIT_BONUS = 1.0    # 수익 보너스: 순수익이 플러스면 그 수익을 (1+PROFIT_BONUS)배로 인정 (1.0 = 2배)
+                      # (거래별 보너스는 '많이 거래해서 이긴 것만 챙기는' 꼼수가 생겨서 순수익 기준으로 줌)
 OUT         = "evolution"
 KST         = timezone(timedelta(hours=9))
 
@@ -139,10 +141,23 @@ def evaluate(g, X, ret, curve=False):
     underwater = np.where(pos != 0, np.maximum(0.0, -unreal), 0.0)
     pen = PENALTY_W * underwater / 288
 
+    # --- 승률 통계 (대시보드 표시용) ---
+    seg = np.cumsum(change > 0)
+    seg_total = np.bincount(seg, weights=logp)
+    ends = np.concatenate([np.nonzero(np.diff(seg))[0], [len(pos) - 1]]) if len(pos) else np.array([], int)
+    held = [e_ for e_ in ends if pos[e_] != 0]
+    wins = int(sum(1 for e_ in held if seg_total[seg[e_]] > 0))
+    n_trades_closed = len(held)
+
+    # --- 수익 보너스: 순수익이 플러스면 그만큼 추가 점수 ---
+    total = float(logp.sum())
+    bonus = PROFIT_BONUS * max(0.0, total)
+
     out = {"ret": float(np.expm1(logp.sum())), "trades": int((change > 0).sum()),
            "logp": logp, "pen": pen,
-           "penalty": float(pen.sum()),
-           "score": float(logp.sum() - pen.sum()),   # 최종 점수 = 수익(로그) - 감점
+           "penalty": float(pen.sum()), "bonus": bonus,
+           "score": total + bonus - float(pen.sum()),   # 최종 점수 = 수익 + 보너스 - 감점
+           "wins": wins, "positions_taken": n_trades_closed,
            "max_underwater": float(underwater.max()) if len(underwater) else 0.0}
     if curve:
         out["curve"] = np.exp(c)
@@ -150,10 +165,13 @@ def evaluate(g, X, ret, curve=False):
 
 
 def fitness(g, X, ret):
-    """학습 점수: (수익 - 손실보유 감점)을 4구간으로 나눠 '꾸준히' 잘해야 높음"""
+    """학습 점수: (수익 + 수익보너스 - 손실보유 감점)을 4구간으로 나눠 '꾸준히' 잘해야 높음"""
     e = evaluate(g, X, ret)
-    net = e["logp"] - e["pen"]
-    chunks = np.array([c.sum() for c in np.array_split(net, 4)])
+    chunks = []
+    for lp, pn in zip(np.array_split(e["logp"], 4), np.array_split(e["pen"], 4)):
+        r = lp.sum()
+        chunks.append(r + PROFIT_BONUS * max(0.0, r) - pn.sum())
+    chunks = np.array(chunks)
     return float(chunks.mean() - 0.5 * chunks.std())
 
 
@@ -170,12 +188,14 @@ def mutate(g, rate=0.1, sigma=0.3):
     return g
 
 
-def evolve(pop, X, ret, gens):
+def evolve(pop, X, ret, gens, log):
     for gen in range(gens):
         scores = np.array([fitness(g, X, ret) for g in pop])
         order = np.argsort(-scores)
         pop = [pop[i] for i in order]
         scores = scores[order]
+        log.append({"gen": gen + 1, "best": float(scores[0]), "mean": float(scores.mean()),
+                    "top20": float(scores[:ELITE].mean())})
         if gen % 30 == 0 or gen == gens - 1:
             print(f"  세대 {gen+1:3d}/{gens}: 최고 점수 {scores[0]:+.4f}, 평균 {scores.mean():+.4f}", flush=True)
         nxt = pop[:ELITE]
@@ -229,7 +249,8 @@ def main():
     print(f"\n=== {day}일차 진화 시작 (이어받은 개체 {POP - n_imm}, 새 개체 {n_imm}) ===", flush=True)
 
     t0 = time.time()
-    pop = evolve(pop, X[tr], ret[tr], GENERATIONS)
+    gen_log = []
+    pop = evolve(pop, X[tr], ret[tr], GENERATIONS, gen_log)
     state["total_gens"] += GENERATIONS
 
     # 도전자 선발: 학습 상위 10마리 중 검증 구간 최고
@@ -259,11 +280,44 @@ def main():
                  "total_gens": state["total_gens"], "champion_id": state["champion_id"],
                  "champion_test": cp_te["ret"], "champion_trades": cp_te["trades"],
                  "champion_score": cp_te["score"], "champion_penalty": cp_te["penalty"],
+                 "champion_bonus": cp_te["bonus"], "challenger_score": ch_te["score"],
                  "challenger_test": ch_te["ret"], "challenger_val": max(val_scores),
                  "replaced": replaced, "buyhold_test": bh, "features": feats})
     save_json(f"{OUT}/history.json", hist)
     save_json(f"{OUT}/population.json", [np.round(g, 4).tolist() for g in pop])
     save_json(f"{OUT}/state.json", state)
+
+    # 대시보드용 상세 데이터
+    mask, W1, b1, w2, b2, th = decode(champ)
+    imp = (np.abs(W1).sum(axis=0) * mask)
+    imp = imp / imp.max() if imp.max() > 0 else imp
+    now_pos = float(positions(champ, X[-1:])[0])
+    idx = np.linspace(0, len(cp_te["curve"]) - 1, min(200, len(cp_te["curve"]))).astype(int)
+    bh_curve = close[te] / close[te][0]
+    final_scores = sorted([fitness(g, X[tr], ret[tr]) for g in pop], reverse=True)
+    ts_index = df.index[-len(X):]
+    latest = {
+        "updated": datetime.now(KST).strftime("%Y-%m-%d %H:%M"), "day": day,
+        "total_gens": state["total_gens"], "generations_today": GENERATIONS, "pop": POP,
+        "seconds": round(time.time() - t0, 1),
+        "split_days": {"train": round(days_of(tr), 1), "val": round(days_of(va), 1), "test": round(days_of(te), 1)},
+        "settings": {"fee": FEE, "penalty_w": PENALTY_W, "profit_bonus": PROFIT_BONUS},
+        "replaced": bool(replaced),
+        "champion": {"id": state["champion_id"], "born": state["champion_born"],
+                     **{k: cp_te[k] for k in ["score", "ret", "penalty", "bonus", "trades", "wins",
+                                              "positions_taken", "max_underwater"]},
+                     "threshold": th, "now_position": now_pos,
+                     "features": [{"name": FEATURES[i], "used": bool(mask[i] > 0), "weight": float(imp[i])}
+                                  for i in range(F)]},
+        "challenger": {k: ch_te[k] for k in ["score", "ret", "penalty", "bonus", "trades", "max_underwater"]},
+        "buyhold": bh, "last_price": float(close[-1]),
+        "test_curve": {"t": [ts_index[te][i].tz_convert(KST).strftime("%m-%d %H:%M") for i in idx],
+                       "ai": [float(cp_te["curve"][i]) for i in idx],
+                       "buyhold": [float(bh_curve[i]) for i in idx]},
+        "gen_log": gen_log,
+        "population_scores": [round(x, 5) for x in final_scores],
+    }
+    save_json(f"{OUT}/latest.json", latest)
 
     # 리포트
     def pct(x): return f"{x*100:+.2f}%"
@@ -284,15 +338,17 @@ _마지막 실행: {datetime.now(KST):%Y-%m-%d %H:%M} KST · {day}일차 · 누�
 
 ## 오늘의 결과
 
-| | **점수** | 수익률 | 손실 보유 감점 | 최대 손실 상태 | 거래 |
-|---|---|---|---|---|---|
-| 👑 챔피언 `{state['champion_id']}` | **{cp_te['score']*100:+.2f}** | {pct(cp_te['ret'])} | -{cp_te['penalty']*100:.2f} | -{cp_te['max_underwater']*100:.2f}% | {cp_te['trades']} |
-| 🥊 오늘의 도전자 | {ch_te['score']*100:+.2f} | {pct(ch_te['ret'])} | -{ch_te['penalty']*100:.2f} | -{ch_te['max_underwater']*100:.2f}% | {ch_te['trades']} |
-| 그냥 보유 | - | {pct(bh)} | - | - | 1 |
-| 아무것도 안 함 | +0.00 | +0.00% | 0 | 0% | 0 |
+| | **점수** | 수익률 | 수익 보너스 | 손실 보유 감점 | 최대 손실 상태 | 거래 |
+|---|---|---|---|---|---|---|
+| 👑 챔피언 `{state['champion_id']}` | **{cp_te['score']*100:+.2f}** | {pct(cp_te['ret'])} | +{cp_te['bonus']*100:.2f} | -{cp_te['penalty']*100:.2f} | -{cp_te['max_underwater']*100:.2f}% | {cp_te['trades']} |
+| 🥊 오늘의 도전자 | {ch_te['score']*100:+.2f} | {pct(ch_te['ret'])} | +{ch_te['bonus']*100:.2f} | -{ch_te['penalty']*100:.2f} | -{ch_te['max_underwater']*100:.2f}% | {ch_te['trades']} |
+| 그냥 보유 | - | {pct(bh)} | - | - | - | 1 |
+| 아무것도 안 함 | +0.00 | +0.00% | 0 | 0 | 0% | 0 |
 
-> **점수 = 수익률(로그) − 손실 보유 감점.** 포지션을 잡고 손실 상태로 버틴 시간만큼 깎입니다
+> **점수 = 수익률(로그) + 수익 보너스 − 손실 보유 감점.**
+> 순수익이 플러스면 그 수익을 2배로 인정(보너스), 손실 상태로 버틴 시간만큼 감점
 > (예: 2% 손실 상태로 하루 버티면 −2점). 챔피언 교체도 이 점수로 결정합니다.
+> 📊 실시간 대시보드: https://ksuin39.github.io/24h_bot/dashboard/
 
 - 결과: **{'도전자가 이겨서 챔피언 교체!' if replaced and day > 1 else '첫 챔피언 등장' if day == 1 else '챔피언 방어 성공'}**
 - 챔피언이 보는 정보 {nfeat}개 중 가장 중요하게 쓰는 것: {', '.join(feats) if feats else '없음 (아무 정보도 안 봄)'}

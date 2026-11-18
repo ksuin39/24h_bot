@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>진화형 트레이딩 AI 대시보드</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --line:#2a313c; --text:#e6edf3; --sub:#8b949e;
+    --green:#3fb950; --red:#f85149; --blue:#58a6ff; --gold:#e3b341; --purple:#bc8cff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;font-size:14px;line-height:1.5}
+  header{padding:20px 20px 8px;max-width:1200px;margin:0 auto;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+  h1{font-size:20px;margin:0}
+  h1 small{display:block;font-size:12px;color:var(--sub);font-weight:400;margin-top:4px}
+  .status{display:flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:var(--panel);font-size:13px}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--sub)}
+  .dot.live{background:var(--green);box-shadow:0 0 0 0 rgba(63,185,80,.7);animation:pulse 1.6s infinite}
+  @keyframes pulse{70%{box-shadow:0 0 0 10px rgba(63,185,80,0)}100%{box-shadow:0 0 0 0 rgba(63,185,80,0)}}
+  main{max-width:1200px;margin:0 auto;padding:8px 20px 40px;display:grid;gap:14px;grid-template-columns:repeat(12,1fr)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;grid-column:span 12;min-width:0}
+  .card h2{font-size:14px;margin:0 0 12px;color:var(--sub);font-weight:600}
+  .kpi{grid-column:span 3}
+  .kpi .v{font-size:26px;font-weight:700;margin-top:2px}
+  .kpi .s{font-size:12px;color:var(--sub)}
+  .half{grid-column:span 6}
+  .third{grid-column:span 4}
+  .two3{grid-column:span 8}
+  @media(max-width:860px){.kpi{grid-column:span 6}.half,.third,.two3{grid-column:span 12}}
+  .pos{color:var(--green)} .neg{color:var(--red)} .muted{color:var(--sub)}
+  .chart{position:relative;height:260px}
+  .score-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--line)}
+  .score-row:last-child{border:0;font-weight:700;font-size:16px}
+  .now{font-size:34px;font-weight:800;text-align:center;padding:10px 0 2px}
+  .feat{display:grid;grid-template-columns:150px 1fr 44px;gap:8px;align-items:center;margin:6px 0;font-size:13px}
+  .bar{height:10px;border-radius:6px;background:#21262d;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--purple)}
+  .feat.off{opacity:.35}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--sub);font-weight:600}
+  .tablewrap{overflow-x:auto}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line)}
+  .badge.ok{color:var(--green);border-color:#2e6b3a}
+  .badge.run{color:var(--gold);border-color:#6b5a2e}
+  .badge.fail{color:var(--red);border-color:#6b2e2e}
+  .note{font-size:12px;color:var(--sub);margin-top:8px}
+  a{color:var(--blue)}
+  #err{display:none;grid-column:span 12;background:#3b1d1d;border:1px solid #6b2e2e;border-radius:12px;padding:14px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧬 진화형 트레이딩 AI 대시보드
+    <small>BTC 모의투자 실험 · 실제 주문 없음 · 1분마다 자동 새로고침</small>
+  </h1>
+  <div class="status"><span class="dot" id="dot"></span><span id="statusText">상태 확인 중…</span></div>
+</header>
+
+<main>
+  <div id="err"></div>
+
+  <div class="card kpi"><h2>진화 일차</h2><div class="v" id="kDay">-</div><div class="s" id="kGens">-</div></div>
+  <div class="card kpi"><h2>👑 챔피언 점수</h2><div class="v" id="kScore">-</div><div class="s" id="kChamp">-</div></div>
+  <div class="card kpi"><h2>시험 구간 수익률</h2><div class="v" id="kRet">-</div><div class="s" id="kBH">-</div></div>
+  <div class="card kpi"><h2>다음 자동 진화</h2><div class="v" id="kNext">-</div><div class="s">매일 오전 7:43 (KST)</div></div>
+
+  <div class="card two3">
+    <h2>📈 오늘의 진화 과정 (세대별 학습 점수)</h2>
+    <div class="chart"><canvas id="cGen"></canvas></div>
+    <div class="note">최고 = 1등 개체, 상위 20 = 살아남는 엘리트 평균, 전체 평균 = 200마리 평균. 오를수록 학습 구간에서 똑똑해지는 중.</div>
+  </div>
+
+  <div class="card third">
+    <h2>🧮 챔피언 점수 구성 (시험 구간)</h2>
+    <div class="score-row"><span>수익 (로그 수익률)</span><span id="sRet">-</span></div>
+    <div class="score-row"><span>＋ 수익 보너스</span><span id="sBon" class="pos">-</span></div>
+    <div class="score-row"><span>－ 손실 보유 감점</span><span id="sPen" class="neg">-</span></div>
+    <div class="score-row"><span>= 최종 점수</span><span id="sTot">-</span></div>
+    <div class="note" id="sInfo">-</div>
+  </div>
+
+  <div class="card two3">
+    <h2>💰 챔피언 자산 변화 vs 그냥 보유 (처음 보는 시험 구간)</h2>
+    <div class="chart"><canvas id="cCurve"></canvas></div>
+  </div>
+
+  <div class="card third">
+    <h2>🤖 지금 챔피언이라면?</h2>
+    <div class="now" id="nowPos">-</div>
+    <div class="note" style="text-align:center" id="nowInfo">-</div>
+    <div class="score-row" style="margin-top:10px"><span>진입 문턱(확신 필요도)</span><span id="nTh">-</span></div>
+    <div class="score-row"><span>시험 구간 거래 / 승리</span><span id="nWin">-</span></div>
+    <div class="score-row"><span>최대 손실 상태</span><span id="nUw" class="neg">-</span></div>
+  </div>
+
+  <div class="card half">
+    <h2>📅 날짜별 챔피언 성적</h2>
+    <div class="chart"><canvas id="cHist"></canvas></div>
+  </div>
+
+  <div class="card half">
+    <h2>👁️ 챔피언이 보는 정보 (진화로 스스로 고름)</h2>
+    <div id="feats"></div>
+  </div>
+
+  <div class="card half">
+    <h2>🧬 개체군 점수 분포 (오늘 진화 후 200마리)</h2>
+    <div class="chart"><canvas id="cPop"></canvas></div>
+  </div>
+
+  <div class="card half">
+    <h2>⚙️ 실행 기록 (GitHub Actions)</h2>
+    <div class="tablewrap"><table id="runs"><thead><tr><th>작업</th><th>상태</th><th>시작</th><th>소요</th></tr></thead><tbody></tbody></table></div>
+    <div class="note">노란색 = 지금 학습 중. 이름을 누르면 실시간 로그를 볼 수 있어요.</div>
+  </div>
+
+  <div class="card">
+    <h2>📋 일차별 기록</h2>
+    <div class="tablewrap"><table id="hist"><thead><tr>
+      <th>일차</th><th>날짜</th><th>누적 세대</th><th>챔피언</th><th>점수</th><th>수익률</th><th>그냥 보유</th><th>보너스</th><th>감점</th><th>거래</th><th>결과</th>
+    </tr></thead><tbody></tbody></table></div>
+  </div>
+</main>
+
+<script>
+const REPO = "ksuin39/24h_bot";
+const BASE = "../evolution/";
+const charts = {};
+const fmtPct = (x, d=2) => (x>=0?"+":"") + (x*100).toFixed(d) + "%";
+const fmtPt  = (x, d=2) => (x>=0?"+":"") + (x*100).toFixed(d);
+const cls = x => x>0 ? "pos" : x<0 ? "neg" : "muted";
+const $ = id => document.getElementById(id);
+
+Chart.defaults.color = "#8b949e";
+Chart.defaults.borderColor = "#2a313c";
+Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+
+function drawChart(id, cfg){
+  if (charts[id]) charts[id].destroy();
+  cfg.options = Object.assign({responsive:true, maintainAspectRatio:false, animation:false,
+    interaction:{mode:"index", intersect:false},
+    plugins:{legend:{labels:{boxWidth:12}}}}, cfg.options||{});
+  charts[id] = new Chart($(id), cfg);
+}
+
+async function getJSON(url){
+  const r = await fetch(url + (url.includes("?")?"&":"?") + "t=" + Date.now(), {cache:"no-store"});
+  if (!r.ok) throw new Error(url + " → " + r.status);
+  return r.json();
+}
+
+function nextRun(){
+  // 매일 22:43 UTC (= 07:43 KST)
+  const now = new Date();
+  const n = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 22, 43));
+  if (n <= now) n.setUTCDate(n.getUTCDate()+1);
+  const m = Math.floor((n-now)/60000);
+  return `${Math.floor(m/60)}시간 ${m%60}분 후`;
+}
+
+async function loadRuns(){
+  try{
+    const d = await getJSON(`https://api.github.com/repos/${REPO}/actions/runs?per_page=40`);
+    const runs = d.workflow_runs.filter(r => !r.name.startsWith("pages"));
+    const live = runs.filter(r => r.status !== "completed");
+    const evoLive = live.find(r => r.name.startsWith("Evolve"));
+    $("dot").className = "dot" + (live.length ? " live" : "");
+    $("statusText").textContent = evoLive ? "🧬 지금 진화(학습) 중…" :
+      live.length ? `⏳ 실행 중: ${live.map(r=>r.name).join(", ")}` : "대기 중 · 다음 진화 " + nextRun();
+    $("runs").querySelector("tbody").innerHTML = runs.slice(0,8).map(r=>{
+      const st = r.status!=="completed" ? '<span class="badge run">실행 중</span>' :
+                 r.conclusion==="success" ? '<span class="badge ok">완료</span>' :
+                 `<span class="badge fail">${r.conclusion}</span>`;
+      const start = new Date(r.run_started_at||r.created_at);
+      const end = r.status==="completed" ? new Date(r.updated_at) : new Date();
+      const mins = Math.max(0, Math.round((end-start)/60000));
+      const dur = mins >= 60 ? `${Math.floor(mins/60)}시간 ${mins%60}분` : `${mins}분`;
+      return `<tr><td><a href="${r.html_url}" target="_blank">${r.name}</a></td><td>${st}</td>
+        <td>${start.toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}</td><td>${dur}</td></tr>`;
+    }).join("");
+  }catch(e){
+    $("statusText").textContent = "실행 상태를 불러오지 못했어요 (잠시 후 다시 시도)";
+  }
+}
+
+async function loadData(){
+  let L, H;
+  try{
+    [L, H] = await Promise.all([getJSON(BASE+"latest.json"), getJSON(BASE+"history.json")]);
+    $("err").style.display = "none";
+  }catch(e){
+    $("err").style.display = "block";
+    $("err").textContent = "아직 대시보드 데이터가 없어요. 첫 진화가 끝나고 1~2분 뒤에 나타나요. (" + e.message + ")";
+    return;
+  }
+  const c = L.champion;
+
+  // KPI
+  $("kDay").textContent = `${L.day}일차`;
+  $("kGens").textContent = `누적 ${L.total_gens.toLocaleString()}세대 · 마지막 ${L.updated}`;
+  $("kScore").innerHTML = `<span class="${cls(c.score)}">${fmtPt(c.score)}</span>`;
+  $("kChamp").textContent = `${c.id} · ${L.replaced ? (L.day>1?"오늘 새로 등극":"첫 챔피언") : "방어 성공"}`;
+  $("kRet").innerHTML = `<span class="${cls(c.ret)}">${fmtPct(c.ret)}</span>`;
+  $("kBH").textContent = `그냥 보유 ${fmtPct(L.buyhold)} · 최근 ${L.split_days.test}일`;
+  $("kNext").textContent = nextRun();
+
+  // 점수 구성
+  const logRet = Math.log1p(c.ret);
+  $("sRet").innerHTML = `<span class="${cls(logRet)}">${fmtPt(logRet)}</span>`;
+  $("sBon").textContent = "+" + (c.bonus*100).toFixed(2);
+  $("sPen").textContent = "−" + (c.penalty*100).toFixed(2);
+  $("sTot").innerHTML = `<span class="${cls(c.score)}">${fmtPt(c.score)}</span>`;
+  $("sInfo").textContent = `순수익이 플러스면 수익을 ${1+L.settings.profit_bonus}배로 인정 · 손실 상태로 버티면 (손실 깊이 × 버틴 일수 × ${L.settings.penalty_w}) 감점 · 수수료 ${(L.settings.fee*100).toFixed(2)}%`;
+
+  // 지금 판단
+  const p = c.now_position;
+  $("nowPos").innerHTML = p>0 ? '<span class="pos">🟢 롱</span>' : p<0 ? '<span class="neg">🔴 숏</span>' : '<span class="muted">⚪ 관망</span>';
+  $("nowInfo").textContent = `마지막 데이터 기준 BTC $${Math.round(L.last_price).toLocaleString()} (${L.updated} 갱신)`;
+  $("nTh").textContent = c.threshold.toFixed(2);
+  $("nWin").textContent = `${c.trades}회 / ${c.wins}승 ${c.positions_taken?`(${Math.round(c.wins/c.positions_taken*100)}%)`:""}`;
+  $("nUw").textContent = "−" + (c.max_underwater*100).toFixed(2) + "%";
+
+  // 진화 과정
+  const g = L.gen_log;
+  drawChart("cGen", {type:"line", data:{labels:g.map(x=>x.gen), datasets:[
+    {label:"최고", data:g.map(x=>x.best*100), borderColor:"#e3b341", pointRadius:0, borderWidth:2},
+    {label:"상위 20 평균", data:g.map(x=>x.top20*100), borderColor:"#bc8cff", pointRadius:0, borderWidth:1.5},
+    {label:"전체 평균", data:g.map(x=>x.mean*100), borderColor:"#58a6ff", pointRadius:0, borderWidth:1, borderDash:[4,3]},
+  ]}, options:{scales:{x:{title:{display:true,text:"세대"},ticks:{maxTicksLimit:10}}, y:{title:{display:true,text:"학습 점수"}}}}});
+
+  // 자산 곡선
+  const tc = L.test_curve;
+  drawChart("cCurve", {type:"line", data:{labels:tc.t, datasets:[
+    {label:"AI 챔피언", data:tc.ai.map(v=>v*100), borderColor:"#3fb950", backgroundColor:"rgba(63,185,80,.08)", fill:true, pointRadius:0, borderWidth:2},
+    {label:"그냥 보유", data:tc.buyhold.map(v=>v*100), borderColor:"#8b949e", pointRadius:0, borderWidth:1.5, borderDash:[5,4]},
+  ]}, options:{scales:{x:{ticks:{maxTicksLimit:8}}, y:{title:{display:true,text:"자산 (시작=100)"}}}}});
+
+  // 날짜별
+  drawChart("cHist", {data:{labels:H.map(h=>h.day+"일"), datasets:[
+    {type:"line", label:"챔피언 점수", data:H.map(h=>h.champion_score!=null?h.champion_score*100:null), borderColor:"#e3b341", pointRadius:3, yAxisID:"y"},
+    {type:"bar", label:"챔피언 수익률 %", data:H.map(h=>h.champion_test*100), backgroundColor:H.map(h=>h.champion_test>=0?"rgba(63,185,80,.5)":"rgba(248,81,73,.5)"), yAxisID:"y"},
+    {type:"line", label:"그냥 보유 %", data:H.map(h=>h.buyhold_test*100), borderColor:"#8b949e", borderDash:[4,3], pointRadius:2, yAxisID:"y"},
+  ]}, options:{scales:{y:{title:{display:true,text:"점수 / %"}}}}});
+
+  // 특징
+  const fs = [...c.features].sort((a,b)=>(b.used-a.used)||(b.weight-a.weight));
+  $("feats").innerHTML = fs.map(f=>`<div class="feat ${f.used?"":"off"}"><span>${f.name}</span>
+    <div class="bar"><i style="width:${f.used?Math.max(3,f.weight*100):0}%"></i></div>
+    <span class="muted">${f.used?Math.round(f.weight*100):"안봄"}</span></div>`).join("") +
+    `<div class="note">보라색이 길수록 판단에 크게 쓰는 정보. 흐린 항목은 진화 과정에서 '안 보기로' 한 정보.</div>`;
+
+  // 분포
+  const ps = L.population_scores.map(x=>x*100);
+  const lo = Math.min(...ps), hi = Math.max(...ps), nb = 20, w = (hi-lo)/nb || 1;
+  const bins = Array(nb).fill(0); ps.forEach(v=>bins[Math.min(nb-1, Math.floor((v-lo)/w))]++);
+  drawChart("cPop", {type:"bar", data:{labels:bins.map((_,i)=>(lo+w*(i+.5)).toFixed(1)), datasets:[
+    {label:"개체 수", data:bins, backgroundColor:"rgba(188,140,255,.6)"}]},
+    options:{plugins:{legend:{display:false}}, scales:{x:{title:{display:true,text:"학습 점수"}}, y:{title:{display:true,text:"마리"}}}}});
+
+  // 기록 표
+  $("hist").querySelector("tbody").innerHTML = [...H].reverse().map(h=>`<tr>
+    <td>${h.day}</td><td>${h.date}</td><td>${h.total_gens}</td><td>${h.champion_id}</td>
+    <td class="${cls(h.champion_score||0)}">${h.champion_score!=null?fmtPt(h.champion_score):"-"}</td>
+    <td class="${cls(h.champion_test)}">${fmtPct(h.champion_test)}</td>
+    <td class="${cls(h.buyhold_test)}">${fmtPct(h.buyhold_test)}</td>
+    <td>${h.champion_bonus!=null?"+"+(h.champion_bonus*100).toFixed(2):"-"}</td>
+    <td>${h.champion_penalty!=null?"−"+(h.champion_penalty*100).toFixed(2):"-"}</td>
+    <td>${h.champion_trades}</td><td>${h.replaced?"🆕 교체":"🛡️ 유지"}</td></tr>`).join("");
+}
+
+async function refresh(){ await Promise.all([loadData(), loadRuns()]); }
+refresh();
+setInterval(refresh, 60000);
+</script>
+</body>
+</html>
