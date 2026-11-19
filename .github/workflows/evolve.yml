@@ -2,7 +2,7 @@ name: Evolve AI (매일 진화)
 
 on:
   schedule:
-    - cron: '43 22 * * *'   # 매일 한국시간 오전 7:43
+    - cron: '17 * * * *'    # 매시간 17분에 실행 (한 번에 약 45분 진화)
   workflow_dispatch:
   push:
     branches: [main]
@@ -19,9 +19,11 @@ concurrency:
 
 jobs:
   evolve:
-    name: 하루치 진화
+    name: 단계별 진화 (약 45분)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 75
+    env:
+      RUN_MINUTES: '45'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,10 +32,10 @@ jobs:
       - run: pip install numpy pandas numba
       - run: python evolve.py
       - name: 진화 결과 저장
+        if: always()
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
           git add evolution/ data/
           git commit -m "evolution: $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M')" || exit 0
-          git pull --rebase
-          git push
+          for i in 1 2 3; do git pull --rebase && git push && break; sleep 5; done

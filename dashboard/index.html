@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>진화형 데이트레이딩 AI 대시보드</title>
+<title>단계별 진화 트레이딩 AI 대시보드</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root{
@@ -56,8 +56,8 @@
 </head>
 <body>
 <header>
-  <h1>🧬 진화형 데이트레이딩 AI 대시보드
-    <small>점수 = 수익 + 수익 보너스(2배) − 손실 보유 감점 · 레버리지 없음 · BTC 모의투자 · 실제 주문 없음 · 1분마다 자동 새로고침</small>
+  <h1>🧬 단계별 진화 트레이딩 AI 대시보드
+    <small>최종 목표: 하루 +1% · 60일 블록 반복 학습 → 목표 달성 시 다음 랜덤 60일 · 점수 = 수익 + 보너스(2배) − 손실 보유 감점 · 매시간 자동 진화 · 모의투자 · 1분마다 자동 새로고침</small>
   </h1>
   <div class="status"><span class="dot" id="dot"></span><span id="statusText">상태 확인 중…</span></div>
 </header>
@@ -66,13 +66,30 @@
   <div id="err"></div>
 
   <div class="kpis">
-  <div class="card kpi"><h2>진화 일차</h2><div class="v" id="kDay">-</div><div class="s" id="kGens">-</div></div>
+  <div class="card kpi"><h2>진화 실행</h2><div class="v" id="kDay">-</div><div class="s" id="kGens">-</div></div>
   <div class="card kpi"><h2>💵 하루 평균 수익 (목표 +1%)</h2><div class="v" id="kAvg">-</div><div class="s" id="kAvgS">-</div>
     <div class="bar" style="margin-top:8px"><i id="kAvgBar" style="width:0;background:var(--green)"></i></div></div>
   <div class="card kpi"><h2>🎯 목표 달성일</h2><div class="v" id="kHit">-</div><div class="s" id="kHitS">-</div></div>
   <div class="card kpi"><h2>👑 챔피언 점수 (시험 구간)</h2><div class="v" id="kScore">-</div><div class="s" id="kChamp">-</div></div>
-  <div class="card kpi"><h2>다음 자동 진화</h2><div class="v" id="kNext">-</div><div class="s">매일 오전 7:43 (KST)</div></div>
+  <div class="card kpi"><h2>다음 자동 진화</h2><div class="v" id="kNext">-</div><div class="s">매시간 자동 (한 번에 약 45분)</div></div>
 
+  </div>
+
+  <div class="card two3">
+    <h2>🎓 지금 학습 중인 단계 <span id="stTitle" class="muted"></span></h2>
+    <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end">
+      <div><div class="muted" style="font-size:12px">1등의 이 60일 하루 평균 (목표 +1%)</div><div id="stAvg" style="font-size:30px;font-weight:800">-</div></div>
+      <div><div class="muted" style="font-size:12px">이 단계 세대</div><div id="stGens" style="font-size:22px;font-weight:700">-</div></div>
+      <div><div class="muted" style="font-size:12px">졸업 / 미달</div><div id="stDone" style="font-size:22px;font-weight:700">-</div></div>
+    </div>
+    <div class="bar" style="margin:10px 0 4px;height:14px"><i id="stBar" style="width:0;background:var(--gold)"></i></div>
+    <div class="note" id="stNote">-</div>
+    <div class="chart" style="height:200px;margin-top:8px"><canvas id="cStage"></canvas></div>
+  </div>
+  <div class="card third">
+    <h2>📚 졸업한 단계 (복습 성적 = 지금 1등이 다시 풀었을 때)</h2>
+    <div class="tablewrap"><table id="stages"><thead><tr><th>단계</th><th>결과</th><th>당시</th><th>복습</th></tr></thead><tbody></tbody></table></div>
+    <div class="note">복습 성적이 크게 떨어지면 예전 걸 잊은 것, 유지되면 실력이 쌓이는 중.</div>
   </div>
 
   <div class="card">
@@ -87,9 +104,9 @@
   </div>
 
   <div class="card two3">
-    <h2>📈 오늘의 진화 과정 (세대별 학습 점수)</h2>
+    <h2>📈 진화 과정 (누적 세대별 1등 성적)</h2>
     <div class="chart"><canvas id="cGen"></canvas></div>
-    <div class="note">세대마다 2년 중 랜덤한 7일 구간 6개에서 시합 (구간이 매번 바뀌어 외우기 불가). 최고 = 1등, 상위 20 = 살아남는 엘리트 평균. <span id="winNote"></span></div>
+    <div class="note">초록 선이 점선(+1%)을 넘으면 그 단계 졸업 → 다음 랜덤 60일로 넘어가며 뚝 떨어졌다가 다시 올라가요. <span id="winNote"></span></div>
   </div>
 
   <div class="card third">
@@ -139,7 +156,7 @@
   <div class="card">
     <h2>📋 일차별 기록</h2>
     <div class="tablewrap"><table id="hist"><thead><tr>
-      <th>일차</th><th>날짜</th><th>누적 세대</th><th>챔피언</th><th>시험 점수</th><th>하루 평균 수익</th><th>목표 달성일</th><th>플러스 달</th><th>레버리지/투입</th><th>청산</th><th>결과</th>
+      <th>실행</th><th>시각</th><th>누적 세대</th><th>챔피언</th><th>시험 점수</th><th>하루 평균 수익</th><th>목표 달성일</th><th>플러스 달</th><th>레버리지/투입</th><th>청산</th><th>결과</th>
     </tr></thead><tbody></tbody></table></div>
   </div>
 </main>
@@ -174,10 +191,10 @@ async function getJSON(url){
 function nextRun(){
   // 매일 22:43 UTC (= 07:43 KST)
   const now = new Date();
-  const n = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 22, 43));
-  if (n <= now) n.setUTCDate(n.getUTCDate()+1);
+  const n = new Date(now); n.setUTCMinutes(17,0,0);
+  if (n <= now) n.setUTCHours(n.getUTCHours()+1);
   const m = Math.floor((n-now)/60000);
-  return `${Math.floor(m/60)}시간 ${m%60}분 후`;
+  return m >= 60 ? `${Math.floor(m/60)}시간 ${m%60}분 후` : `${m}분 후`;
 }
 
 async function loadRuns(){
@@ -218,8 +235,8 @@ async function loadData(){
   const c = L.champion;
 
   // KPI
-  $("kDay").textContent = `${L.day}일차`;
-  $("kGens").textContent = `누적 ${L.total_gens.toLocaleString()}세대 · 마지막 ${L.updated}`;
+  $("kDay").textContent = `#${L.day}`;
+  $("kGens").textContent = `누적 ${L.total_gens.toLocaleString()}세대 · 이번 ${L.generations_today}세대 · ${L.updated}`;
   const tgt = L.settings.daily_target;
   const fp = (x,d=2)=>(x>=0?"+":"")+x.toFixed(d);
   $("kScore").innerHTML = `<span class="${cls(c.score)}">${fp(c.score)}</span><span class="muted" style="font-size:14px"> 점</span>`;
@@ -237,6 +254,24 @@ async function loadData(){
   ]}, options:{scales:{y:{title:{display:true,text:"%"}}}}});
   $("kNext").textContent = nextRun();
 
+  // 단계
+  const CU = L.curriculum, cu = CU.current, lb = CU.leader_on_block;
+  $("stTitle").textContent = `${cu.n}단계 · ${cu.from} ~ ${cu.to}`;
+  $("stAvg").innerHTML = `<span class="${cls(lb.avg_daily)}">${fmtPct(lb.avg_daily,3)}</span>`;
+  $("stGens").textContent = `${cu.gens.toLocaleString()} / ${L.settings.stage_max_gens.toLocaleString()}`;
+  $("stDone").textContent = `${CU.graduated_total} / ${CU.failed_total}`;
+  $("stBar").style.width = Math.min(100, Math.max(0, lb.avg_daily/tgt*100)) + "%";
+  $("stNote").textContent = `목표 대비 ${Math.round(Math.max(0,lb.avg_daily)/tgt*100)}% · 이 60일에서 하루 거래 ${lb.trades_per_day.toFixed(1)}회 · +1% 달성 ${lb.hit_days}/${lb.days}일 · 60일 합계 ${fmtPct(lb.ret)} · 단계 시작 ${cu.started}`;
+  drawChart("cStage", {type:"line", data:{labels:CU.leader_block_curve.map((_,i)=>i), datasets:[
+    {label:"1등의 이 60일 자산 (시작=100)", data:CU.leader_block_curve.map(v=>v*100), borderColor:"#e3b341", pointRadius:0, borderWidth:2, fill:true, backgroundColor:"rgba(227,179,65,.08)"}]},
+    options:{scales:{x:{display:false}}}});
+  $("stages").querySelector("tbody").innerHTML = CU.stages.length ? [...CU.stages].reverse().map(r=>`<tr>
+    <td>${r.n}<div class="muted" style="font-size:11px">${r.from.slice(2)}~${r.to.slice(5)}</div></td>
+    <td>${r.result==="졸업"?"🎓 졸업":"⏭️ 미달"}<div class="muted" style="font-size:11px">${r.gens.toLocaleString()}세대</div></td>
+    <td class="${cls(r.avg_daily_at_end)}">${fmtPct(r.avg_daily_at_end,2)}</td>
+    <td class="${cls(r.avg_daily_now)}">${fmtPct(r.avg_daily_now,2)}</td></tr>`).join("") :
+    `<tr><td colspan="4" class="muted" style="text-align:left">아직 졸업한 단계 없음 — 1단계(최근 60일) 학습 중</td></tr>`;
+
   // 점수 구성
   const rules = L.settings.rules;
   const entries = Object.entries(c.cats);
@@ -244,7 +279,7 @@ async function loadData(){
       <span class="${cls(v)}">${fp(v,3)}</span></div>`).join("") +
     `<div class="score-row"><span>= 점수</span><span class="${cls(c.score)}">${fp(c.score,3)}</span></div>`;
   $("sInfo").textContent = `1점 = 1%p · 수수료 ${(L.settings.fee*100).toFixed(2)}%는 수익에 반영 · 날 넘김 허용 · 레버리지 1배`;
-  $("winNote").textContent = `마지막 세대 구간: ${L.last_windows.join(", ")}`;
+  $("winNote").textContent = `지금 학습 구간: ${L.last_windows.join(", ")}`;
   const M = L.months;
   const pm = M.filter(m=>m.score>0).length;
   drawChart("cMonth", {data:{labels:M.map(m=>m.month), datasets:[
@@ -269,10 +304,11 @@ async function loadData(){
   // 진화 과정
   const g = L.gen_log;
   drawChart("cGen", {type:"line", data:{labels:g.map(x=>x.gen), datasets:[
-    {label:"최고", data:g.map(x=>x.best), borderColor:"#e3b341", pointRadius:0, borderWidth:2},
-    {label:"상위 20 평균", data:g.map(x=>x.top20), borderColor:"#bc8cff", pointRadius:0, borderWidth:1.5},
-    {label:"전체 평균", data:g.map(x=>x.mean), borderColor:"#58a6ff", pointRadius:0, borderWidth:1, borderDash:[4,3]},
-  ]}, options:{scales:{x:{title:{display:true,text:"세대"},ticks:{maxTicksLimit:10}}, y:{title:{display:true,text:"학습 점수"}}}}});
+    {label:"1등 하루 평균 수익 %", data:g.map(x=>x.avg_daily!=null?x.avg_daily*100:null), borderColor:"#3fb950", pointRadius:0, borderWidth:2, yAxisID:"y"},
+    {label:"목표 +1%", data:g.map(()=>tgt*100), borderColor:"#3fb950", borderDash:[6,4], pointRadius:0, borderWidth:1, yAxisID:"y"},
+    {label:"1등 학습 점수", data:g.map(x=>x.best), borderColor:"#e3b341", pointRadius:0, borderWidth:1.5, yAxisID:"y2"},
+  ]}, options:{scales:{x:{title:{display:true,text:"누적 세대"},ticks:{maxTicksLimit:10}},
+    y:{title:{display:true,text:"하루 평균 %"}}, y2:{position:"right",grid:{drawOnChartArea:false},title:{display:true,text:"점수"}}}}});
 
   // 자산 곡선
   const tc = L.test_curve;
