@@ -1,7 +1,7 @@
 """
 evolve.py — 매일 스스로 진화하는 '데이트레이딩' AI (모의투자, 실제 주문 없음)
 =========================================================================
-목표: 하루에 계좌의 +1% 를 꾸준히. 레버리지 최대 20배.
+목표: 수익은 크게, 손실 상태로 오래 버티지 않기. (점수 = 초반 방식)
 
 [학습 방식]
   - 비트코인 5분봉 2년치를 data/ 에 저장 (매일 새 데이터만 추가)
@@ -13,28 +13,16 @@ evolve.py — 매일 스스로 진화하는 '데이트레이딩' AI (모의투�
 [AI 유전자]
   - 볼 정보 선택 (시장 정보 14 + 내 상태 2 = 16가지)
       내 상태: 오늘 내 계좌 수익률, 지금 포지션 손익
-  - 판단 신경망 가중치, 진입 문턱, 레버리지(1~20배), 계좌 투입 비율(10~100%)
+  - 판단 신경망 가중치, 진입 문턱   (레버리지 없음 = 1배, 계좌 100%)
 
-[점수표] (Sin_jin 설계) — 모든 % 는 계좌 대비
-  1. 하루 성적표 (매일 오전 9시 KST 정산)
-     +1% 이상(목표 달성)  +3점, 1% 넘는 부분 1%당 +0.5 (최대 +2 추가)
-     0 ~ +1%             수익% x 2
-     손실                 손실% x 3   (예: -0.5% → -1.5)
-     연속 목표 달성        2일 연속 +0.5, 3일 이상 연속 매일 +1
-  2. 거래 하나하나
-     진입                 +0.1 (그 거래가 수익으로 끝났을 때만)
-     익절                 +0.5 x min(1, 수익% / 0.5%)
-     손절 (손실 -1% 이내)  -0.3
-     손절 (손실 -1% 초과)  -0.8 x 손실% / 1%
-     당일 종료            +0.2 (하루 3번까지)
-     보유 중 손실 상태     -0.1 x 손실% x 버틴 시간(시간)
-  3. 위험 관리
-     청산                 -10
-     장중 계좌 -3% 아래    -2 (하루 1번)
-     계좌 50% 아래 (파산)  -20, 그 구간 시합 종료
-     포지션 들고 날 넘김    -0.5
-     하루 10번 넘는 거래    11번째부터 1번당 -0.2
-     수수료               -5 x 낸 수수료%
+[점수] (초반 방식으로 복원)
+  점수 = 수익률(로그, %) + 수익 보너스 - 손실 보유 감점
+    수익 보너스     : 그 구간 순수익이 플러스면 같은 만큼 한 번 더 (수익 2배 인정)
+    손실 보유 감점  : 포지션을 잡고 '진입 대비 손실 상태'로 버티는 동안
+                     손실 깊이 x 버틴 시간(일) 만큼 감점 (2% 손실로 하루 버티면 -2점)
+  - 수수료 0.05% (포지션 바꿀 때) 는 수익률에 그대로 반영
+  - 날 넘김 허용, 강제 청산 없음
+  - 구간 점수 = 7일 구간 전체 점수, 학습 점수 = 6개 구간 평균 - 0.5 x 들쭉날쭉함
 
 실행:  python evolve.py          (실제 데이터)
        python evolve.py --sim    (가짜 데이터로 테스트)
@@ -64,27 +52,13 @@ OUT          = "evolution"
 KST          = timezone(timedelta(hours=9))
 BPD          = 288     # 하루 5분봉 수
 
-# 점수표 (시뮬레이터에 배열로 전달)
-SC = dict(
-    day_target_pts=3.0, day_extra_per_pct=0.5, day_extra_cap=2.0,
-    day_gain_mult=2.0, day_loss_mult=3.0, streak2=0.5, streak3=1.0,
-    entry_win=0.1, tp=0.5, tp_full_pct=0.5, sl_small=-0.3, sl_big=-0.8, sl_big_pct=1.0,
-    sameday=0.2, sameday_cap=3.0, hold_loss=0.1,
-    liq=-10.0, dd=-2.0, dd_pct=3.0, bankrupt=-20.0, bankrupt_level=0.5,
-    overnight=-0.5, overtrade_n=10.0, overtrade=-0.2, fee_w=5.0,
-)
-SC_KEYS = list(SC.keys())
-SC_ARR = np.array([SC[k] for k in SC_KEYS])
-I = {k: i for i, k in enumerate(SC_KEYS)}
-
-CATS = ["하루 성적", "연속 달성", "진입", "익절", "손절", "당일 종료", "손실 보유",
-        "청산", "장중 -3%", "파산", "날 넘김", "과잉 거래", "수수료"]
-RULES = {"하루 성적": "+1%↑ 3점(+초과 1%당 0.5) / 수익%×2 / 손실%×3",
-         "연속 달성": "2일 +0.5, 3일↑ 매일 +1", "진입": "+0.1 (수익 거래만)",
-         "익절": "+0.5 × min(1, 수익%/0.5%)", "손절": "-0.3 (−1% 이내) / -0.8×손실%",
-         "당일 종료": "+0.2 (하루 3번)", "손실 보유": "-0.1 × 손실% × 시간",
-         "청산": "-10", "장중 -3%": "-2", "파산": "-20 (계좌 50%↓)", "날 넘김": "-0.5",
-         "과잉 거래": "11번째부터 -0.2", "수수료": "-5 × 수수료%"}
+# 점수 (초반 방식)
+PROFIT_BONUS = 1.0     # 순수익이 플러스면 그 수익을 (1+PROFIT_BONUS)배로 인정
+PENALTY_W    = 1.0     # 손실 보유 감점: 손실 깊이 x 버틴 일수
+CATS = ["수익", "수익 보너스", "손실 보유 감점"]
+RULES = {"수익": "구간 수익률 (로그, %, 수수료 반영)",
+         "수익 보너스": "순수익이 플러스면 같은 만큼 한 번 더 (2배)",
+         "손실 보유 감점": "손실 깊이 × 버틴 일수 (2% 손실로 하루 = -2점)"}
 
 MARKET_FEATURES = ["5분 변화", "15분 변화", "1시간 변화", "4시간 변화", "1일 변화",
                    "1시간 평균 대비 위치", "4시간 평균 대비 위치", "1일 평균 대비 위치",
@@ -219,75 +193,43 @@ def decode(g):
     return mask, W1, b1, w2, b2, th, lev, frac
 
 
-# ---------------- 시뮬레이터 ----------------
+# ---------------- 시뮬레이터 (초반 방식) ----------------
 @njit(cache=True)
-def day_points(r, sc, streak):
-    """하루 계좌 수익률 r(%) → (하루 성적 점수, 연속 보너스, 새 streak)"""
-    if r >= 1.0:
-        p = sc[0] + min(sc[2], sc[1] * (r - 1.0))
-        streak += 1
-        b = sc[6] if streak >= 3 else (sc[5] if streak == 2 else 0.0)
-        return p, b, streak
-    if r > 0:
-        return sc[3] * r, 0.0, 0
-    return sc[4] * r, 0.0, 0
-
-
-@njit(cache=True)
-def simulate(base, ws, w2, b2, th, close, high, low, day, lev, frac, fee, mm, sc):
+def simulate(base, ws, w2, b2, th, close, day, fee, pen_w):
+    """레버리지 1배, 계좌 100%. 5분마다 롱/숏/관망.
+    반환: logp(봉별 로그수익), pen(봉별 손실보유 감점), eq(봉별 계좌), st(통계)"""
     n = close.shape[0]
     H = base.shape[1]
-    pts = np.zeros(n)
-    cat = np.zeros(13)
-    mtm_arr = np.zeros(n)
-    # stats: 0 진입, 1 익절, 2 작은손절, 3 큰손절, 4 청산, 5 날넘김, 6 당일종료, 7 수수료합, 8 파산, 9 목표달성일, 10 최대연속, 11 장중-3%
-    st = np.zeros(12)
+    logp = np.zeros(n)
+    pen = np.zeros(n)
+    eq_arr = np.ones(n)
+    # st: 0 진입, 1 수익 거래, 2 손실 거래, 3 날 넘김, 4 최대 손실 상태, 5 수수료합
+    st = np.zeros(6)
     eq = 1.0
     d = 0
-    entry = 0.0; notional = 0.0; margin = 0.0; entry_eq = 1.0; entry_fee = 0.0; liq = 0.0; entry_day = 0
-    day_start = 1.0; dd_hit = False; streak = 0; trades_today = 0; sameday_today = 0
-    dead = False
-    last = 1.0
+    cum = 0.0            # 진입 후 누적 로그손익
+    day_start = 1.0
     h = np.zeros(H)
     for t in range(n):
-        if dead:
-            mtm_arr[t] = last
-            continue
-        # ---- 하루 정산 (날이 바뀌면 어제 성적 매기기) ----
-        if t > 0 and day[t] != day[t - 1]:
-            r = (mtm_arr[t - 1] / day_start - 1.0) * 100.0
-            p, b, streak = day_points(r, sc, streak)
-            pts[t] += p + b; cat[0] += p; cat[1] += b
-            if r >= 1.0:
-                st[9] += 1
-            if streak > st[10]:
-                st[10] = streak
-            day_start = mtm_arr[t - 1]
-            dd_hit = False; trades_today = 0; sameday_today = 0
+        if t > 0:
+            if day[t] != day[t - 1]:
+                day_start = eq
+                if d != 0:
+                    st[3] += 1
+            # 지난 5분 포지션 결과
             if d != 0:
-                v = sc[21]; pts[t] += v; cat[10] += v; st[5] += 1
-        # ---- 청산 확인 ----
-        if d != 0:
-            if (d == 1 and low[t] <= liq) or (d == -1 and high[t] >= liq):
-                eq -= margin
-                v = sc[16]; pts[t] += v; cat[7] += v; st[4] += 1
-                d = 0
-        # ---- 내 상태 ----
-        upnl = d * (close[t] / entry - 1.0) * notional if d != 0 else 0.0
-        mtm = eq + upnl
-        pos_pct = upnl / entry_eq * 100.0 if d != 0 else 0.0
-        today_pct = (mtm / day_start - 1.0) * 100.0
-        if d != 0 and pos_pct < 0:
-            v = -sc[15] * (-pos_pct) * (5.0 / 60.0); pts[t] += v; cat[6] += v
-        # ---- 파산 ----
-        if mtm < sc[20]:
-            v = sc[19]; pts[t] += v; cat[9] += v; st[8] = 1
-            dead = True; last = mtm; mtm_arr[t] = mtm
-            continue
-        # ---- 장중 -3% ----
-        if (not dd_hit) and mtm < day_start * (1.0 - sc[18] / 100.0):
-            v = sc[17]; pts[t] += v; cat[8] += v; dd_hit = True; st[11] += 1
-        # ---- 판단 (신경망) ----
+                r = d * (close[t] / close[t - 1] - 1.0)
+                lp = np.log1p(r)
+                logp[t] += lp
+                eq *= 1.0 + r
+                cum += lp
+                if cum < 0:
+                    pen[t] += pen_w * (-cum) / 288.0
+                    if -cum > st[4]:
+                        st[4] = -cum
+        # 내 상태
+        today_pct = (eq / day_start - 1.0) * 100.0
+        pos_pct = (np.exp(cum) - 1.0) * 100.0 if d != 0 else 0.0
         tp = min(5.0, max(-5.0, today_pct))
         pp = min(5.0, max(-5.0, pos_pct))
         s = b2
@@ -297,47 +239,22 @@ def simulate(base, ws, w2, b2, th, close, high, low, day, lev, frac, fee, mm, sc
         s = np.tanh(s)
         want = 1 if s > th else (-1 if s < -th else 0)
         if want != d:
-            if d != 0:   # 종료
-                pnl = d * (close[t] / entry - 1.0) * notional
-                xfee = notional * (close[t] / entry) * fee
-                before = eq
-                eq += pnl - xfee
-                st[7] += xfee
-                v = -sc[24] * xfee / before * 100.0; pts[t] += v; cat[12] += v
-                net = (pnl - xfee - entry_fee) / entry_eq * 100.0
-                if net > 0:
-                    v = sc[7]; pts[t] += v; cat[2] += v
-                    v = sc[8] * min(1.0, net / sc[9]); pts[t] += v; cat[3] += v; st[1] += 1
-                elif net >= -sc[12]:
-                    v = sc[10]; pts[t] += v; cat[4] += v; st[2] += 1
+            if d != 0:                      # 종료
+                if cum + np.log1p(-fee) > 0:     # 청산 수수료까지 빼고 플러스면 수익 거래
+                    st[1] += 1
                 else:
-                    v = sc[11] * (-net / sc[12]); pts[t] += v; cat[4] += v; st[3] += 1
-                if day[t] == entry_day and sameday_today < sc[14]:
-                    v = sc[13]; pts[t] += v; cat[5] += v; sameday_today += 1; st[6] += 1
-                d = 0
-            if want != 0:   # 진입
-                d = want
-                entry = close[t]; entry_eq = eq
-                margin = eq * frac; notional = margin * lev
-                entry_fee = notional * fee
-                v = -sc[24] * entry_fee / eq * 100.0; pts[t] += v; cat[12] += v
-                eq -= entry_fee; st[7] += entry_fee
-                entry_day = day[t]
-                liq = entry * (1.0 - 1.0 / lev + mm) if d == 1 else entry * (1.0 + 1.0 / lev - mm)
-                trades_today += 1; st[0] += 1
-                if trades_today > sc[22]:
-                    v = sc[23]; pts[t] += v; cat[11] += v
-        mtm_arr[t] = eq + (d * (close[t] / entry - 1.0) * notional if d != 0 else 0.0)
-    # 마지막 날 정산
-    if not dead and n > 0:
-        r = (mtm_arr[n - 1] / day_start - 1.0) * 100.0
-        p, b, streak = day_points(r, sc, streak)
-        pts[n - 1] += p + b; cat[0] += p; cat[1] += b
-        if r >= 1.0:
-            st[9] += 1
-        if streak > st[10]:
-            st[10] = streak
-    return pts, cat, mtm_arr, st
+                    st[2] += 1
+            f = fee * abs(want - d)
+            lp = np.log1p(-f)
+            logp[t] += lp
+            eq *= 1.0 - f
+            st[5] += f
+            if want != 0:
+                st[0] += 1
+                cum = lp if d == 0 else np.log1p(-fee)   # 새 포지션의 진입 수수료부터 시작
+            d = want
+        eq_arr[t] = eq
+    return logp, pen, eq_arr, st
 
 
 def run(g, S):
@@ -345,35 +262,47 @@ def run(g, S):
     base = (S["X"] * mask[:FM]) @ W1[:, :FM].T + b1
     ws = np.ascontiguousarray(W1[:, FM:] * mask[FM:])
     return simulate(np.ascontiguousarray(base), ws, np.ascontiguousarray(w2), b2, th,
-                    S["close"], S["high"], S["low"], S["day"], lev, frac, FEE, MAINT_MARGIN, SC_ARR)
+                    S["close"], S["day"], FEE, PENALTY_W)
 
 
 def n_days(S):
     return len(np.unique(S["day"]))
 
 
+def score_of(logp_sum, pen_sum):
+    """점수(%p) = 수익 + 수익 보너스 - 손실 보유 감점"""
+    bonus = PROFIT_BONUS * max(0.0, logp_sum)
+    return (logp_sum + bonus - pen_sum) * 100.0, bonus * 100.0
+
+
 def window_score(g, S):
-    pts, *_ = run(g, S)
-    return pts.sum() / n_days(S)
+    logp, pen, *_ = run(g, S)
+    return score_of(logp.sum(), pen.sum())[0]
 
 
 def evaluate(g, S):
-    pts, cat, mtm, st = run(g, S)
+    logp, pen, eq, st = run(g, S)
+    score, bonus = score_of(logp.sum(), pen.sum())
     _, d_idx = np.unique(S["day"], return_inverse=True)
     nd = int(d_idx.max()) + 1
     last = np.zeros(nd, dtype=int); last[d_idx] = np.arange(len(d_idx))
-    d_eq = mtm[last]
+    d_eq = eq[last]
     d_ret = d_eq / np.concatenate([[1.0], d_eq[:-1]]) - 1
-    _, _, _, _, _, th, lev, frac = decode(g)
+    d_pts = (np.bincount(d_idx, weights=logp, minlength=nd) - np.bincount(d_idx, weights=pen, minlength=nd)) * 100
+    th = decode(g)[5]
+    streak = best = 0
+    for r in d_ret:
+        streak = streak + 1 if r >= 0.01 else 0
+        best = max(best, streak)
     return {
-        "score": float(pts.sum() / nd), "d_pts": np.bincount(d_idx, weights=pts, minlength=nd), "daily": d_ret,
-        "cats": {CATS[i]: float(cat[i] / nd) for i in range(13)},
-        "ret": float(mtm[-1] - 1), "avg_daily": float(np.expm1(np.log(max(mtm[-1], 1e-9)) / nd)),
-        "days": nd, "hit_days": int(st[9]), "loss_days": int((d_ret < 0).sum()), "best_streak": int(st[10]),
+        "score": float(score), "d_pts": d_pts, "daily": d_ret,
+        "cats": {"수익": float(logp.sum() * 100), "수익 보너스": float(bonus), "손실 보유 감점": float(-pen.sum() * 100)},
+        "ret": float(eq[-1] - 1), "avg_daily": float(np.expm1(np.log(max(eq[-1], 1e-9)) / nd)),
+        "days": nd, "hit_days": int((d_ret >= 0.01).sum()), "loss_days": int((d_ret < 0).sum()), "best_streak": int(best),
         "trades": int(st[0]), "trades_per_day": float(st[0] / nd), "wins": int(st[1]),
-        "small_losses": int(st[2]), "big_losses": int(st[3]), "liquidations": int(st[4]),
-        "overnights": int(st[5]), "dd_days": int(st[11]), "fee_pct": float(st[7] * 100),
-        "bankrupt": bool(st[8]), "lev": lev, "frac": frac, "th": th, "curve": mtm,
+        "small_losses": int(st[2]), "big_losses": 0, "liquidations": 0,
+        "overnights": int(st[3]), "dd_days": 0, "fee_pct": float(st[5] * 100), "max_underwater": float(-np.expm1(-st[4]) * 100),
+        "bankrupt": False, "lev": 1.0, "frac": 1.0, "th": th, "curve": eq,
     }
 
 
@@ -407,7 +336,7 @@ def evolve(pop, D, day_starts, n_train_days, gens, log):
                     "mean": float(np.mean(np.maximum(scores, -30))), "windows": lbl})
         if gen % 30 == 0 or gen == gens - 1:
             *_, lev, frac = decode(pop[0])
-            print(f"  세대 {gen+1:3d}/{gens}: 1등 {scores[0]:+.2f}점/일 (레버리지 {lev:.0f}배, 투입 {frac*100:.0f}%), "
+            print(f"  세대 {gen+1:3d}/{gens}: 1등 {scores[0]:+.2f}점, "
                   f"상위20 {scores[:ELITE].mean():+.2f} | 이번 구간 {', '.join(lbl)}", flush=True)
         nxt = pop[:ELITE]
         while len(nxt) < POP:
@@ -494,6 +423,7 @@ def main():
     secs = time.time() - t0
 
     mask, W1, b1, w2, b2, th, lev, frac = decode(champ)
+    lev, frac = 1.0, 1.0     # 초반 방식: 레버리지 없음, 계좌 100%
     imp = np.abs(W1).sum(axis=0) * mask
     imp = imp / imp.max() if imp.max() > 0 else imp
     feats = [FEATURES[i] for i in np.argsort(-imp) if mask[i] > 0][:5]
@@ -530,7 +460,8 @@ def main():
         "total_gens": state["total_gens"], "generations_today": GENERATIONS, "pop": POP, "seconds": round(secs, 1),
         "data": {"from": str(D["ts"][0].date()), "to": str(D["ts"][-1].date()), "train_days": tr_days,
                  "win_days": WIN_DAYS, "n_windows": N_WINDOWS, "val_days": VAL_DAYS, "test_days": TEST_DAYS},
-        "settings": {"fee": FEE, "daily_target": 0.01, "max_lev": MAX_LEV, "rules": RULES},
+        "settings": {"fee": FEE, "daily_target": 0.01, "max_lev": 1, "rules": RULES, "mode": "classic",
+                     "profit_bonus": PROFIT_BONUS, "penalty_w": PENALTY_W},
         "replaced": bool(replaced),
         "champion": {"id": state["champion_id"], "born": state["champion_born"],
                      **{k: cp_te[k] for k in keys}, "threshold": th, "now_position": now_pos,
@@ -564,31 +495,30 @@ def main():
 
 _마지막 실행: {datetime.now(KST):%Y-%m-%d %H:%M} KST · {dnum}일차 · 누적 {state['total_gens']}세대 · 계산 {secs:.0f}초_
 
-> 모의투자 실험입니다. 실제 주문은 하지 않습니다. **목표: 하루 +1% · 레버리지 최대 {MAX_LEV}배**
+> 모의투자 실험입니다. 실제 주문은 하지 않습니다. **점수 = 수익 + 수익 보너스(플러스면 2배) − 손실 보유 감점 · 레버리지 없음**
 > 학습: {latest['data']['from']} ~ 데이터 {tr_days}일 중 세대마다 랜덤 {WIN_DAYS}일 x {N_WINDOWS}구간 · 시험: 가장 최근 {c['days']}일 (학습에 안 씀)
 > 📊 실시간 대시보드: https://ksuin39.github.io/24h_bot/dashboard/
 
 ## 오늘의 챔피언 `{state['champion_id']}` ({'첫 등장' if dnum == 1 else '새로 등극' if replaced else '방어 성공'})
 
-- **하루 평균 점수: {c['score']:+.2f}점** · 하루 평균 수익 {pct(c['avg_daily'], 3)} · 시험 {c['days']}일 합계 {pct(c['ret'])} (그냥 보유 {pct(bh)})
+- **시험 구간 점수: {c['score']:+.2f}점** · 하루 평균 수익 {pct(c['avg_daily'], 3)} · 시험 {c['days']}일 합계 {pct(c['ret'])} (그냥 보유 {pct(bh)})
 - 목표(+1%) 달성 {c['hit_days']}/{c['days']}일 · 최장 연속 {c['best_streak']}일 · 손실일 {c['loss_days']}일
-- 레버리지 **{lev:.0f}배**, 계좌 **{frac*100:.0f}%** 투입 · 하루 거래 {c['trades_per_day']:.1f}회
-- 익절 {c['wins']} · 작은 손절 {c['small_losses']} · 큰 손절 {c['big_losses']} · 청산 {c['liquidations']} · 날 넘김 {c['overnights']}
+- 하루 거래 {c['trades_per_day']:.1f}회 · 수익 거래 {c['wins']} · 손실 거래 {c['small_losses']} · 날 넘김 {c['overnights']} · 최대 손실 상태 -{c['max_underwater']:.2f}%
 - 2년 월별 성적: 플러스인 달 **{sum(1 for m in months if m['score'] > 0)}/{len(months)}개월**
 - 주로 보는 정보: {', '.join(feats) if feats else '없음'}
 
-### 점수 항목별 (시험 구간 하루 평균)
+### 점수 구성 (시험 구간)
 | 항목 | 규칙 | 점수 |
 |---|---|---|
 {cat_rows}
 
 ### 월별 성적표 (2년, 달마다 새 계좌로 시작)
-| 월 | 하루 점수 | AI 수익 | 비트코인 | 목표 달성일 | 청산 |
+| 월 | 점수 | AI 수익 | 비트코인 | +1% 달성일 | - |
 |---|---|---|---|---|---|
 {month_rows}
 
 ## 일차별 기록
-| 일차 | 날짜 | 누적 세대 | 하루 점수 | 하루 평균 수익 | 목표 달성일 | 플러스 달 | 레버리지/투입 | 결과 |
+| 일차 | 날짜 | 누적 세대 | 시험 점수 | 하루 평균 수익 | +1% 달성일 | 플러스 달 | 레버리지/투입 | 결과 |
 |---|---|---|---|---|---|---|---|---|
 {hist_rows}
 """
