@@ -21,7 +21,9 @@ evolve.py — 단계별로 스스로 진화하는 트레이딩 AI (모의투자,
             SMA200 대비(5분/1시간/4시간/일봉), RSI14(5분/1시간/4시간), 매수세(1시간/4시간),
             하루/1주 고저 범위 내 위치
       내 상태: 오늘 내 계좌 수익률, 지금 포지션 손익
-  - 판단 신경망 가중치, 진입 문턱   (레버리지 없음 = 1배, 계좌 100%)
+  - 판단 신경망 가중치, 진입 문턱, 레버리지 성향
+      레버리지: 비트코인만 1~5배 (AI가 진화로 고름), 다른 코인은 1배. 계좌 100% 투입
+      5배면 반대로 약 19.5% 움직일 때 청산 → 계좌 99% 손실, 그 구간 종료
 
 [점수] (초반 방식으로 복원)
   점수 = 수익률(로그, %) + 수익 보너스 - 손실 보유 감점
@@ -44,6 +46,7 @@ from numba import njit
 # ---------------- 설정 ----------------
 HISTORY_DAYS = 730     # 저장할 데이터 기간 (2년)
 COINS        = ["BTC", "ETH", "SOL", "XRP", "DOGE"]   # 학습에 쓰는 코인 (Coinbase 현물 USD)
+COIN_MAX_LEV = {"BTC": 5}   # 코인별 최대 레버리지 (없으면 1배). AI가 유전자로 1~최대 사이를 고름
 COIN_NAMES   = {"BTC": "비트코인", "ETH": "이더리움", "SOL": "솔라나", "XRP": "리플", "DOGE": "도지코인"}
 BLOCK_DAYS   = 30      # 한 단계에서 학습할 기간 (일) — 랜덤 코인 x 랜덤 30일
 CHUNKS       = 4       # 꾸준함 평가용 토막 수
@@ -208,7 +211,7 @@ def make_features(df):
 
 
 def seg(D, a, b):
-    return {k: v[a:b] for k, v in D.items()}
+    return {k: (v[a:b] if hasattr(v, "__len__") and not isinstance(v, str) else v) for k, v in D.items()}
 
 
 # ---------------- AI 유전자 ----------------
@@ -237,30 +240,49 @@ def decode(g):
 
 # ---------------- 시뮬레이터 (초반 방식) ----------------
 @njit(cache=True)
-def simulate(base, ws, w2, b2, th, close, day, fee, pen_w):
-    """레버리지 1배, 계좌 100%. 5분마다 롱/숏/관망.
+def simulate(base, ws, w2, b2, th, close, high, low, day, fee, pen_w, lev, mm):
+    """계좌 100% 투입, 레버리지 lev배 (비트코인만 최대 5배, 나머지 1배). 5분마다 롱/숏/관망.
+    레버리지 > 1 이면 5분봉 고가/저가로 청산 확인 → 청산되면 계좌 거의 전부 잃고 그 구간 종료.
     반환: logp(봉별 로그수익), pen(봉별 손실보유 감점), eq(봉별 계좌), st(통계)"""
     n = close.shape[0]
     H = base.shape[1]
     logp = np.zeros(n)
     pen = np.zeros(n)
     eq_arr = np.ones(n)
-    # st: 0 진입, 1 수익 거래, 2 손실 거래, 3 날 넘김, 4 최대 손실 상태, 5 수수료합
-    st = np.zeros(6)
+    # st: 0 진입, 1 수익 거래, 2 손실 거래, 3 날 넘김, 4 최대 손실 상태, 5 수수료합, 6 청산
+    st = np.zeros(7)
     eq = 1.0
     d = 0
+    entry = 0.0
+    dead = False
     cum = 0.0            # 진입 후 누적 로그손익
     day_start = 1.0
     h = np.zeros(H)
     for t in range(n):
+        if dead:
+            eq_arr[t] = eq
+            continue
         if t > 0:
             if day[t] != day[t - 1]:
                 day_start = eq
                 if d != 0:
                     st[3] += 1
             # 지난 5분 포지션 결과
+            if d != 0 and lev > 1.0 and ((d == 1 and low[t] <= entry * (1.0 - 1.0 / lev + mm)) or
+                                         (d == -1 and high[t] >= entry * (1.0 + 1.0 / lev - mm))):
+                # 청산: 계좌의 99%를 잃고 이 구간은 끝
+                lp = np.log(0.01)
+                logp[t] += lp
+                eq *= 0.01
+                pen[t] += pen_w * 5.0
+                st[6] += 1
+                st[2] += 1
+                dead = True
+                eq_arr[t] = eq
+                continue
             if d != 0:
-                r = d * (close[t] / close[t - 1] - 1.0)
+                r = d * lev * (close[t] / close[t - 1] - 1.0)
+                r = max(r, -0.99)
                 lp = np.log1p(r)
                 logp[t] += lp
                 eq *= 1.0 + r
@@ -282,29 +304,36 @@ def simulate(base, ws, w2, b2, th, close, day, fee, pen_w):
         want = 1 if s > th else (-1 if s < -th else 0)
         if want != d:
             if d != 0:                      # 종료
-                if cum + np.log1p(-fee) > 0:     # 청산 수수료까지 빼고 플러스면 수익 거래
+                if cum + np.log1p(-fee * lev) > 0:     # 청산 수수료까지 빼고 플러스면 수익 거래
                     st[1] += 1
                 else:
                     st[2] += 1
-            f = fee * abs(want - d)
+            f = min(0.5, fee * lev * abs(want - d))
             lp = np.log1p(-f)
             logp[t] += lp
             eq *= 1.0 - f
             st[5] += f
             if want != 0:
                 st[0] += 1
-                cum = lp if d == 0 else np.log1p(-fee)   # 새 포지션의 진입 수수료부터 시작
+                cum = lp if d == 0 else np.log1p(-fee * lev)   # 새 포지션의 진입 수수료부터 시작
+                entry = close[t]
             d = want
         eq_arr[t] = eq
     return logp, pen, eq_arr, st
 
 
+def coin_lev(g, max_lev):
+    """유전자의 레버리지 성향(0~1)을 그 코인의 1~최대배로"""
+    return float(np.round(1 + (max_lev - 1) * sigmoid(g[-2]))) if max_lev > 1 else 1.0
+
+
 def run(g, S):
-    mask, W1, b1, w2, b2, th, lev, frac = decode(g)
+    mask, W1, b1, w2, b2, th, _, _ = decode(g)
+    lev = coin_lev(g, S.get("max_lev", 1))
     base = (S["X"] * mask[:FM]) @ W1[:, :FM].T + b1
     ws = np.ascontiguousarray(W1[:, FM:] * mask[FM:])
     return simulate(np.ascontiguousarray(base), ws, np.ascontiguousarray(w2), b2, th,
-                    S["close"], S["day"], FEE, PENALTY_W)
+                    S["close"], S["high"], S["low"], S["day"], FEE, PENALTY_W, lev, MAINT_MARGIN)
 
 
 def n_days(S):
@@ -342,9 +371,9 @@ def evaluate(g, S):
         "ret": float(eq[-1] - 1), "avg_daily": float(np.expm1(np.log(max(eq[-1], 1e-9)) / nd)),
         "days": nd, "hit_days": int((d_ret >= 0.01).sum()), "loss_days": int((d_ret < 0).sum()), "best_streak": int(best),
         "trades": int(st[0]), "trades_per_day": float(st[0] / nd), "wins": int(st[1]),
-        "small_losses": int(st[2]), "big_losses": 0, "liquidations": 0,
+        "small_losses": int(st[2]), "big_losses": 0, "liquidations": int(st[6]),
         "overnights": int(st[3]), "dd_days": 0, "fee_pct": float(st[5] * 100), "max_underwater": float(-np.expm1(-st[4]) * 100),
-        "bankrupt": False, "lev": 1.0, "frac": 1.0, "th": th, "curve": eq,
+        "bankrupt": bool(st[6] > 0), "lev": coin_lev(g, S.get("max_lev", 1)), "frac": 1.0, "th": th, "curve": eq,
     }
 
 
@@ -464,6 +493,7 @@ def main():
                 print(f"[{coin}] 데이터 부족 → 제외", flush=True)
                 continue
             D = make_features(df)
+            D["max_lev"] = COIN_MAX_LEV.get(coin, 1)
         except Exception as ex:
             print(f"[{coin}] 데이터 오류 → 제외: {ex}", flush=True)
             continue
@@ -614,7 +644,7 @@ def main():
                        "btc": float(S["close"][-1] / S["close"][0] - 1)})
 
     mask, W1, b1, w2, b2, th, _, _ = decode(champ)
-    lev, frac = 1.0, 1.0
+    lev, frac = coin_lev(champ, COIN_MAX_LEV.get("BTC", 1)), 1.0     # 비트코인에서 쓰는 레버리지
     imp = np.abs(W1).sum(axis=0) * mask
     imp = imp / imp.max() if imp.max() > 0 else imp
     feats = [FEATURES[i] for i in np.argsort(-imp) if mask[i] > 0][:5]
@@ -657,7 +687,7 @@ def main():
         "coins": {k: COIN_NAMES.get(k, k) for k in coins},
         "data": {"from": str(D0["ts"][0].date()), "to": str(D0["ts"][-1].date()), "train_days": coins[main_coin]["tr_days"],
                  "win_days": BLOCK_DAYS, "n_windows": 1, "val_days": VAL_DAYS, "test_days": TEST_DAYS},
-        "settings": {"fee": FEE, "daily_target": GOAL_DAILY, "max_lev": 1, "rules": RULES, "mode": "classic",
+        "settings": {"fee": FEE, "daily_target": GOAL_DAILY, "max_lev": COIN_MAX_LEV, "rules": RULES, "mode": "classic",
                      "profit_bonus": PROFIT_BONUS, "penalty_w": PENALTY_W, "stage_max_gens": STAGE_MAX_GENS,
                      "block_days": BLOCK_DAYS, "run_minutes": RUN_MINUTES, "survive_daily": SURVIVE_DAILY},
         "curriculum": {"current": cur,
@@ -707,7 +737,7 @@ _마지막 실행: {now} KST · 실행 #{run_no} · 누적 {state['total_gens']}
 
 > 모의투자 실험입니다. 실제 주문은 하지 않습니다. **최종 목표: 하루 +1% 수익을 내는 AI**
 > 학습: 랜덤 코인({', '.join(COIN_NAMES.get(k, k) for k in coins)}) x 랜덤 30일을 반복 학습 → 1등이 하루 평균 +1% 달성하면 졸업 → 다음 랜덤 코인·30일
-> 생존: 매 세대 하루 평균 +0.1% 이상만 생존 · 점수 = 수익 + 수익 보너스(2배) − 손실 보유 감점 · 레버리지 없음
+> 생존: 매 세대 하루 평균 +0.1% 이상만 생존 · 점수 = 수익 + 수익 보너스(2배) − 손실 보유 감점 · 레버리지: 비트코인만 최대 5배 (챔피언 {lev:.0f}배)
 > 📊 실시간 대시보드: https://ksuin39.github.io/24h_bot/dashboard/
 
 ## 지금 단계: {cur['n']}단계 — {COIN_NAMES.get(cur['coin'], cur['coin'])} ({cur['from']} ~ {cur['to']})
