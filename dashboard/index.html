@@ -57,7 +57,7 @@
 <body>
 <header>
   <h1>🧬 단계별 진화 트레이딩 AI 대시보드
-    <small>최종 목표: 하루 +1% · 60일 블록 반복 학습 → 목표 달성 시 다음 랜덤 60일 · 점수 = 수익 + 보너스(2배) − 손실 보유 감점 · 매시간 자동 진화 · 모의투자 · 1분마다 자동 새로고침</small>
+    <small>최종 목표: 하루 +1% · 랜덤 코인(BTC·ETH·SOL·XRP·DOGE) × 랜덤 30일 반복 학습 → 목표 달성 시 다음 · 하루 +0.1% 이상만 생존 · 점수 = 수익 + 보너스(2배) − 손실 보유 감점 · 매시간 자동 진화 · 모의투자 · 1분마다 자동 새로고침</small>
   </h1>
   <div class="status"><span class="dot" id="dot"></span><span id="statusText">상태 확인 중…</span></div>
 </header>
@@ -67,7 +67,7 @@
 
   <div class="kpis">
   <div class="card kpi"><h2>진화 실행</h2><div class="v" id="kDay">-</div><div class="s" id="kGens">-</div></div>
-  <div class="card kpi"><h2>💵 하루 평균 수익 (목표 +1%)</h2><div class="v" id="kAvg">-</div><div class="s" id="kAvgS">-</div>
+  <div class="card kpi"><h2>💵 챔피언 실전 하루 평균 (5코인 평균)</h2><div class="v" id="kAvg">-</div><div class="s" id="kAvgS">-</div>
     <div class="bar" style="margin-top:8px"><i id="kAvgBar" style="width:0;background:var(--green)"></i></div></div>
   <div class="card kpi"><h2>🎯 목표 달성일</h2><div class="v" id="kHit">-</div><div class="s" id="kHitS">-</div></div>
   <div class="card kpi"><h2>👑 챔피언 점수 (시험 구간)</h2><div class="v" id="kScore">-</div><div class="s" id="kChamp">-</div></div>
@@ -78,7 +78,7 @@
   <div class="card two3">
     <h2>🎓 지금 학습 중인 단계 <span id="stTitle" class="muted"></span></h2>
     <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end">
-      <div><div class="muted" style="font-size:12px">1등의 이 60일 하루 평균 (목표 +1%)</div><div id="stAvg" style="font-size:30px;font-weight:800">-</div></div>
+      <div><div class="muted" style="font-size:12px">1등의 이 구간 하루 평균 (목표 +1%)</div><div id="stAvg" style="font-size:30px;font-weight:800">-</div></div>
       <div><div class="muted" style="font-size:12px">이 단계 세대</div><div id="stGens" style="font-size:22px;font-weight:700">-</div></div>
       <div><div class="muted" style="font-size:12px">졸업 / 미달</div><div id="stDone" style="font-size:22px;font-weight:700">-</div></div>
     </div>
@@ -93,7 +93,12 @@
   </div>
 
   <div class="card">
-    <h2>📊 챔피언의 날짜별 수익 (처음 보는 시험 구간) — 초록 점선이 목표 +1%</h2>
+    <h2>🪙 코인별 실전 시험 (챔피언, 학습에 안 쓴 최근 9일)</h2>
+    <div class="tablewrap"><table id="coinTests"><thead><tr><th>코인</th><th>하루 평균</th><th>9일 합계</th><th>그냥 보유</th><th>+1% 달성일</th><th>하루 거래</th></tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <div class="card">
+    <h2>📊 챔피언의 날짜별 수익 (비트코인) (처음 보는 시험 구간) — 초록 점선이 목표 +1%</h2>
     <div class="chart" style="height:240px"><canvas id="cDaily"></canvas></div>
   </div>
 
@@ -241,9 +246,16 @@ async function loadData(){
   const fp = (x,d=2)=>(x>=0?"+":"")+x.toFixed(d);
   $("kScore").innerHTML = `<span class="${cls(c.score)}">${fp(c.score)}</span><span class="muted" style="font-size:14px"> 점</span>`;
   $("kChamp").textContent = `${c.id} · ${L.replaced ? (L.day>1?"오늘 새로 등극":"첫 챔피언") : "방어 성공"}`;
-  $("kAvg").innerHTML = `<span class="${cls(c.avg_daily)}">${fmtPct(c.avg_daily,3)}</span>`;
-  $("kAvgS").textContent = `목표 대비 ${Math.round(Math.max(0,c.avg_daily)/tgt*100)}% · 시험 ${c.days}일 합계 ${fmtPct(c.ret)} (보유 ${fmtPct(L.buyhold)})`;
-  $("kAvgBar").style.width = Math.min(100, Math.max(0,c.avg_daily)/tgt*100) + "%";
+  const allAvg = L.champion_all_coins_avg_daily ?? c.avg_daily;
+  $("kAvg").innerHTML = `<span class="${cls(allAvg)}">${fmtPct(allAvg,3)}</span>`;
+  $("kAvgS").textContent = `목표 대비 ${Math.round(Math.max(0,allAvg)/tgt*100)}% · 비트코인 ${fmtPct(c.avg_daily,3)} · 최근 ${c.days}일 (학습 안 한 기간)`;
+  $("kAvgBar").style.width = Math.min(100, Math.max(0,allAvg)/tgt*100) + "%";
+  if (L.coin_tests) {
+    $("coinTests").querySelector("tbody").innerHTML = Object.entries(L.coin_tests).map(([k,v])=>`<tr>
+      <td>${(L.coins||{})[k]||k}</td><td class="${cls(v.avg_daily)}">${fmtPct(v.avg_daily,3)}</td>
+      <td class="${cls(v.ret)}">${fmtPct(v.ret)}</td><td class="${cls(v.buyhold)}">${fmtPct(v.buyhold)}</td>
+      <td>${v.hit_days}/${v.days}</td><td>${v.trades_per_day.toFixed(1)}</td></tr>`).join("");
+  }
   $("kHit").innerHTML = `${c.hit_days}<span class="muted" style="font-size:16px"> / ${c.days}일</span>`;
   $("kHitS").textContent = `+1% 이상 달성 ${Math.round(c.hit_days/c.days*100)}% · 손실일 ${c.loss_days}일`;
   const dl = L.test_daily;
@@ -256,21 +268,21 @@ async function loadData(){
 
   // 단계
   const CU = L.curriculum, cu = CU.current, lb = CU.leader_on_block;
-  $("stTitle").textContent = `${cu.n}단계 · ${cu.from} ~ ${cu.to}`;
+  $("stTitle").textContent = `${cu.n}단계 · ${(L.coins||{})[cu.coin]||cu.coin||""} · ${cu.from} ~ ${cu.to}`;
   $("stAvg").innerHTML = `<span class="${cls(lb.avg_daily)}">${fmtPct(lb.avg_daily,3)}</span>`;
   $("stGens").textContent = `${cu.gens.toLocaleString()} / ${L.settings.stage_max_gens.toLocaleString()}`;
   $("stDone").textContent = `${CU.graduated_total} / ${CU.failed_total}`;
   $("stBar").style.width = Math.min(100, Math.max(0, lb.avg_daily/tgt*100)) + "%";
-  $("stNote").textContent = `목표 대비 ${Math.round(Math.max(0,lb.avg_daily)/tgt*100)}% · 이 60일에서 하루 거래 ${lb.trades_per_day.toFixed(1)}회 · +1% 달성 ${lb.hit_days}/${lb.days}일 · 60일 합계 ${fmtPct(lb.ret)} · 단계 시작 ${cu.started}`;
+  $("stNote").textContent = `목표 대비 ${Math.round(Math.max(0,lb.avg_daily)/tgt*100)}% · 이 구간에서 하루 거래 ${lb.trades_per_day.toFixed(1)}회 · +1% 달성 ${lb.hit_days}/${lb.days}일 · 구간 합계 ${fmtPct(lb.ret)} · 단계 시작 ${cu.started}`;
   drawChart("cStage", {type:"line", data:{labels:CU.leader_block_curve.map((_,i)=>i), datasets:[
-    {label:"1등의 이 60일 자산 (시작=100)", data:CU.leader_block_curve.map(v=>v*100), borderColor:"#e3b341", pointRadius:0, borderWidth:2, fill:true, backgroundColor:"rgba(227,179,65,.08)"}]},
+    {label:"1등의 이 구간 자산 (시작=100)", data:CU.leader_block_curve.map(v=>v*100), borderColor:"#e3b341", pointRadius:0, borderWidth:2, fill:true, backgroundColor:"rgba(227,179,65,.08)"}]},
     options:{scales:{x:{display:false}}}});
   $("stages").querySelector("tbody").innerHTML = CU.stages.length ? [...CU.stages].reverse().map(r=>`<tr>
-    <td>${r.n}<div class="muted" style="font-size:11px">${r.from.slice(2)}~${r.to.slice(5)}</div></td>
+    <td>${r.n} ${r.coin||""}<div class="muted" style="font-size:11px">${r.from.slice(2)}~${r.to.slice(5)}</div></td>
     <td>${r.result==="졸업"?"🎓 졸업":"⏭️ 미달"}<div class="muted" style="font-size:11px">${r.gens.toLocaleString()}세대</div></td>
     <td class="${cls(r.avg_daily_at_end)}">${fmtPct(r.avg_daily_at_end,2)}</td>
     <td class="${cls(r.avg_daily_now)}">${fmtPct(r.avg_daily_now,2)}</td></tr>`).join("") :
-    `<tr><td colspan="4" class="muted" style="text-align:left">아직 졸업한 단계 없음 — 1단계(최근 60일) 학습 중</td></tr>`;
+    `<tr><td colspan="4" class="muted" style="text-align:left">아직 끝난 단계 없음 — 1단계 학습 중</td></tr>`;
 
   // 점수 구성
   const rules = L.settings.rules;
