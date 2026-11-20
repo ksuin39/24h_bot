@@ -10,6 +10,8 @@ evolve.py — 단계별로 스스로 진화하는 트레이딩 AI (모의투자,
       → STAGE_MAX_GENS 세대가 지나도 못 졸업하면 '미달'로 기록하고 다음으로
   - 30일을 4토막으로 나눠 '꾸준히' 잘해야 점수가 높음
   - 생존 규칙: 매 세대 하루 평균 +0.1% 이상인 개체만 생존 (미만은 탈락, 빈자리는 생존자의 자식)
+  - 복습 섞기: 학습 점수 = 지금 단계 70% + 지난 단계(최근 12개 중 랜덤 2개) 복습 30%
+      → 구간마다 외우고 잊는 대신, 여러 구간에 통하는 공통 실력이 남도록
   - 각 코인의 가장 최근 17일은 학습에 안 씀: 앞 8일 = 검증, 뒤 9일 = 시험 (5개 코인 평균으로 챔피언 결정)
   - 매시간(연속) 자동 실행, 한 번에 약 RUN_MINUTES 분 진화하고 저장
 
@@ -54,6 +56,8 @@ TEST_DAYS    = 9
 POP          = 200
 ELITE        = 20
 IMMIGRANTS   = 0.15
+REVIEW_W     = 0.3     # 복습 섞기: 학습 점수 = 지금 단계 70% + 지난 단계 복습 30%
+REVIEW_PICK  = 2       # 세대마다 지난 단계(최근 12개) 중 랜덤 2개를 복습
 SURVIVE_DAILY = 0.001   # 생존 기준: 학습 60일에서 하루 평균 +0.1% 이상이면 생존, 미만이면 탈락
 MAX_SURVIVORS = 100     # 생존자가 너무 많으면 점수 높은 100마리까지만 (자식 자리 확보)
 HIDDEN       = 8       # 신경망 은닉 뉴런 (목표가 높아 4 → 8로 키움)
@@ -372,6 +376,18 @@ def fitness_and_daily(g, chunks):
     return float(s.mean() - 0.5 * s.std()), float(np.expm1(lsum / max(days, 1)))
 
 
+def review_score(g, rblocks):
+    """지난 단계 복습 점수 (지금 단계 점수와 같은 크기로 맞춤: 하루당 점수 x 토막 일수)"""
+    if not rblocks:
+        return 0.0
+    per_chunk_days = BLOCK_DAYS / CHUNKS
+    vals = []
+    for RB in rblocks:
+        logp, pen, *_ = run(g, RB)
+        vals.append(score_of(logp.sum(), pen.sum())[0] / n_days(RB) * per_chunk_days)
+    return float(np.mean(vals))
+
+
 def block_chunks(B):
     starts = np.concatenate([[0], np.nonzero(np.diff(B["day"]))[0] + 1, [len(B["day"])]])
     nd = len(starts) - 1
@@ -497,6 +513,16 @@ def main():
     while time.time() - t0 < budget:
         res = [fitness_and_daily(g, chunks) for g in pop]
         scores = np.array([r[0] for r in res]); daily = np.array([r[1] for r in res])
+        # 복습 섞기: 지난 단계 중 랜덤 2개를 같이 풀게 해서 30% 반영
+        past = [s_ for s_ in state["stages"][-12:] if s_.get("coin") in coins]
+        if past and REVIEW_W > 0:
+            picks = random.sample(past, min(REVIEW_PICK, len(past)))
+            rblocks = []
+            for s_ in picks:
+                Cr = coins[s_["coin"]]
+                rblocks.append(make_block(Cr, locate(Cr, s_["first_day_num"]))[0])
+            rev = np.array([review_score(g, rblocks) for g in pop])
+            scores = (1 - REVIEW_W) * scores + REVIEW_W * rev
         order = np.argsort(-scores)
         pop = [pop[i] for i in order]; scores = scores[order]; daily = daily[order]
         alive = [i for i in range(len(pop)) if daily[i] >= SURVIVE_DAILY][:MAX_SURVIVORS]
