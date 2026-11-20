@@ -57,7 +57,7 @@
 <body>
 <header>
   <h1>🧬 단계별 진화 트레이딩 AI 대시보드
-    <small>최종 목표: 하루 +1% · 랜덤 코인(BTC·ETH·SOL·XRP·DOGE) × 랜덤 30일 반복 학습 → 목표 달성 시 다음 · 하루 +0.1% 이상만 생존 · 점수 = 수익 + 보너스(2배) − 손실 보유 감점 · 매시간 자동 진화 · 모의투자 · 1분마다 자동 새로고침</small>
+    <small>최종 목표: 하루 +1% · 랜덤 코인(BTC·ETH·SOL·XRP·DOGE) × 랜덤 30일 반복 학습 → 목표 달성 시 다음 · 생존: 하루 +0.1% 이상 & 거래한 날 70% 이상 · 포지션 최대 24시간 · BTC 레버리지 최대 5배 · 점수 = 수익 + 보너스(2배) − 손실 보유 감점 · 매시간 자동 진화 · 모의투자 · 1분마다 자동 새로고침</small>
   </h1>
   <div class="status"><span class="dot" id="dot"></span><span id="statusText">상태 확인 중…</span></div>
 </header>
@@ -93,7 +93,7 @@
   </div>
 
   <div class="card">
-    <h2>🪙 코인별 실전 시험 (챔피언, 학습에 안 쓴 최근 9일)</h2>
+    <h2>🪙 코인별 실전 시험 (챔피언, 학습에 안 쓴 최근 9일) <span id="champQual"></span></h2>
     <div class="tablewrap"><table id="coinTests"><thead><tr><th>코인</th><th>하루 평균</th><th>9일 합계</th><th>그냥 보유</th><th>+1% 달성일</th><th>하루 거래</th></tr></thead><tbody></tbody></table></div>
   </div>
 
@@ -250,6 +250,11 @@ async function loadData(){
   $("kAvg").innerHTML = `<span class="${cls(allAvg)}">${fmtPct(allAvg,3)}</span>`;
   $("kAvgS").textContent = `목표 대비 ${Math.round(Math.max(0,allAvg)/tgt*100)}% · 비트코인 ${fmtPct(c.avg_daily,3)} · 최근 ${c.days}일 (학습 안 한 기간)`;
   $("kAvgBar").style.width = Math.min(100, Math.max(0,allAvg)/tgt*100) + "%";
+  if (L.champion_rules) {
+    const R = L.champion_rules, ok = L.champion_qualified;
+    $("champQual").innerHTML = `<span class="badge ${ok?"ok":"fail"}">${ok?"✅ 챔피언 자격 있음":"❌ 자격 있는 AI 없음 — 임시로 도전자 표시"}</span>
+      <span class="muted" style="font-size:12px"> 거래한 날 ${R.trade_days_now.toFixed(1)}/9일 · 하루 ${R.tpd_now.toFixed(1)}회 (기준: ${R.trade_days}, ${R.tpd}, 청산 없음)</span>`;
+  }
   if (L.coin_tests) {
     $("coinTests").querySelector("tbody").innerHTML = Object.entries(L.coin_tests).map(([k,v])=>`<tr>
       <td>${(L.coins||{})[k]||k}</td><td class="${cls(v.avg_daily)}">${fmtPct(v.avg_daily,3)}</td>
