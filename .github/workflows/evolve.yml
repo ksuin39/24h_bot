@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 75
     env:
       RUN_MINUTES: '45'
-      CHAIN_UNTIL: '2026-11-21T00:00:00+09:00'   # 이 시각까지는 끝나자마자 다음 실행을 바로 이어서 시작
+      CHAIN_UNTIL: '2026-11-23T00:00:00+09:00'   # 이 시각까지는 끝나자마자 다음 실행을 바로 이어서 시작
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

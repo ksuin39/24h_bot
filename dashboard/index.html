@@ -106,7 +106,7 @@
   <div class="card two3">
     <h2>📈 진화 과정 (누적 세대별 1등 성적)</h2>
     <div class="chart"><canvas id="cGen"></canvas></div>
-    <div class="note">초록 선이 점선(+1%)을 넘으면 그 단계 졸업 → 다음 랜덤 60일로 넘어가며 뚝 떨어졌다가 다시 올라가요. <span id="winNote"></span></div>
+    <div class="note">보라 선 = 매 세대 살아남은 개체 수 (60일 하루 평균 +0.1% 이상만 생존, 최대 100). 초록 선이 점선(+1%)을 넘으면 그 단계 졸업 → 다음 랜덤 60일로 넘어가며 뚝 떨어졌다가 다시 올라가요. <span id="winNote"></span></div>
   </div>
 
   <div class="card third">
@@ -306,9 +306,9 @@ async function loadData(){
   drawChart("cGen", {type:"line", data:{labels:g.map(x=>x.gen), datasets:[
     {label:"1등 하루 평균 수익 %", data:g.map(x=>x.avg_daily!=null?x.avg_daily*100:null), borderColor:"#3fb950", pointRadius:0, borderWidth:2, yAxisID:"y"},
     {label:"목표 +1%", data:g.map(()=>tgt*100), borderColor:"#3fb950", borderDash:[6,4], pointRadius:0, borderWidth:1, yAxisID:"y"},
-    {label:"1등 학습 점수", data:g.map(x=>x.best), borderColor:"#e3b341", pointRadius:0, borderWidth:1.5, yAxisID:"y2"},
+    {label:"생존 개체 수 (하루 +0.1% 이상)", data:g.map(x=>x.alive!=null?x.alive:null), borderColor:"#bc8cff", pointRadius:0, borderWidth:1.5, yAxisID:"y2"},
   ]}, options:{scales:{x:{title:{display:true,text:"누적 세대"},ticks:{maxTicksLimit:10}},
-    y:{title:{display:true,text:"하루 평균 %"}}, y2:{position:"right",grid:{drawOnChartArea:false},title:{display:true,text:"점수"}}}}});
+    y:{title:{display:true,text:"하루 평균 %"}}, y2:{position:"right",min:0,max:L.pop,grid:{drawOnChartArea:false},title:{display:true,text:"생존 (마리)"}}}}});
 
   // 자산 곡선
   const tc = L.test_curve;

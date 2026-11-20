@@ -10,11 +10,16 @@ evolve.py — 단계별로 스스로 진화하는 트레이딩 AI (모의투자,
       → 졸업하면 2년 중 '다른 랜덤 60일'로 넘어가 다음 단계 학습 (개체군은 그대로 이어감)
       → 한 단계에서 STAGE_MAX_GENS 세대가 지나도 못 졸업하면 '미달'로 기록하고 다음 60일로
   - 60일 안에서도 4토막(각 15일)으로 나눠 '꾸준히' 잘해야 점수가 높음
+  - 생존 규칙: 매 세대 60일 하루 평균 수익이 +0.1% 이상인 개체만 살아남음 (미만은 탈락)
+      → 빈자리는 생존자끼리 교배+돌연변이로 채움 (생존자 0~1마리면 상위 5마리 + 새 개체로 재시작)
   - 매시간 자동 실행, 한 번에 약 RUN_MINUTES 분 진화하고 저장 → 다음 실행이 이어서 진화
   - 가장 최근 17일은 학습에 절대 안 씀: 앞 8일 = 검증(도전자 선발), 뒤 9일 = 시험(챔피언 대결)
 
 [AI 유전자]
-  - 볼 정보 선택 (시장 정보 14 + 내 상태 2 = 16가지)
+  - 볼 정보 선택 (시장 정보 25 + 내 상태 2 = 27가지)
+      시장: 가격 변화(5분~1일), 평균 대비 위치, 거래량, 변동성, 시간대, 오늘 시작가 대비,
+            SMA200 대비(5분/1시간/4시간/일봉), RSI14(5분/1시간/4시간), 매수세(1시간/4시간),
+            하루/1주 고저 범위 내 위치
       내 상태: 오늘 내 계좌 수익률, 지금 포지션 손익
   - 판단 신경망 가중치, 진입 문턱   (레버리지 없음 = 1배, 계좌 100%)
 
@@ -49,6 +54,8 @@ TEST_DAYS    = 9
 POP          = 200
 ELITE        = 20
 IMMIGRANTS   = 0.15
+SURVIVE_DAILY = 0.001   # 생존 기준: 학습 60일에서 하루 평균 +0.1% 이상이면 생존, 미만이면 탈락
+MAX_SURVIVORS = 100     # 생존자가 너무 많으면 점수 높은 100마리까지만 (자식 자리 확보)
 HIDDEN       = 8       # 신경망 은닉 뉴런 (목표가 높아 4 → 8로 키움)
 FEE          = 0.0005  # 포지션 금액 기준 0.05% (진입/청산 각각)
 MAINT_MARGIN = 0.005
@@ -69,7 +76,11 @@ RULES = {"수익": "구간 수익률 (로그, %, 수수료 반영)",
 MARKET_FEATURES = ["5분 변화", "15분 변화", "1시간 변화", "4시간 변화", "1일 변화",
                    "1시간 평균 대비 위치", "4시간 평균 대비 위치", "1일 평균 대비 위치",
                    "거래량 (1시간 대비)", "거래량 (1일 대비)", "변동성 수준",
-                   "시간대 (sin)", "시간대 (cos)", "오늘 시작가 대비 위치"]
+                   "시간대 (sin)", "시간대 (cos)", "오늘 시작가 대비 위치",
+                   "SMA200 대비 (5분봉)", "SMA200 대비 (1시간봉)", "SMA200 대비 (4시간봉)", "SMA200 대비 (일봉)",
+                   "RSI14 (5분봉)", "RSI14 (1시간봉)", "RSI14 (4시간봉)",
+                   "매수세 (1시간)", "매수세 (4시간)",
+                   "하루 고저 범위 내 위치", "1주 고저 범위 내 위치"]
 STATE_FEATURES = ["오늘 내 계좌 수익률", "지금 포지션 손익"]
 FEATURES = MARKET_FEATURES + STATE_FEATURES
 FM, FS = len(MARKET_FEATURES), len(STATE_FEATURES)
@@ -163,6 +174,26 @@ def make_features(df):
     X[11] = np.sin(2 * np.pi * hour / 24)
     X[12] = np.cos(2 * np.pi * hour / 24)
     X[13] = np.log(c / c.groupby(df.index.floor("D")).transform("first")) / vol
+    # SMA200 대비 위치 (5분봉 / 1시간봉 / 4시간봉 / 일봉 기준 200개 평균) — 변동성으로 나눠 크기 맞춤
+    for i, bars in zip([14, 15, 16, 17], [1, 12, 48, 288]):
+        n = 200 * bars
+        sma = c.rolling(n, min_periods=n // 2).mean()
+        X[i] = np.log(c / sma) / (vol * np.sqrt(min(n, 2016)))
+    # RSI14 (5분봉 / 1시간봉 / 4시간봉) → -1~+1 로 (50 = 0)
+    for i, bars in zip([18, 19, 20], [1, 12, 48]):
+        ch = c.diff(bars)
+        up = ch.clip(lower=0).rolling(14 * bars).mean()
+        dn = (-ch).clip(lower=0).rolling(14 * bars).mean()
+        X[i] = (up / (up + dn + 1e-12) - 0.5) * 4
+    # 매수세: 캔들 안에서 종가가 고가 쪽이면 매수 우세 (+1), 저가 쪽이면 매도 우세 (-1) — 거래량 가중
+    rng = (df["high"] - df["low"]).replace(0, np.nan)
+    clv = ((2 * c - df["high"] - df["low"]) / rng).fillna(0)
+    for i, w in zip([21, 22], [12, 48]):
+        X[i] = (clv * v).rolling(w).sum() / (v.rolling(w).sum() + 1e-9) * 3
+    # 최근 고가/저가 범위 안에서 지금 위치 (0 = 바닥, 1 = 꼭대기 → -1~+1)
+    for i, w in zip([23, 24], [288, 2016]):
+        hi, lo = df["high"].rolling(w).max(), df["low"].rolling(w).min()
+        X[i] = ((c - lo) / (hi - lo + 1e-9) - 0.5) * 4
     X = X.replace([np.inf, -np.inf], np.nan).clip(-5, 5)
     ok = X.notna().all(axis=1).to_numpy()
     day = np.asarray((df.index.normalize() - pd.Timestamp("1970-01-01", tz="UTC")).days, dtype=np.int64)
@@ -329,6 +360,17 @@ def fitness_chunks(g, chunks):
     return float(s.mean() - 0.5 * s.std())
 
 
+def fitness_and_daily(g, chunks):
+    """(학습 점수, 60일 하루 평균 수익) 을 한 번에"""
+    scores, lsum, days = [], 0.0, 0
+    for C in chunks:
+        logp, pen, *_ = run(g, C)
+        scores.append(score_of(logp.sum(), pen.sum())[0])
+        lsum += logp.sum(); days += n_days(C)
+    s = np.array(scores)
+    return float(s.mean() - 0.5 * s.std()), float(np.expm1(lsum / max(days, 1)))
+
+
 def block_chunks(B):
     starts = np.concatenate([[0], np.nonzero(np.diff(B["day"]))[0] + 1, [len(B["day"])]])
     nd = len(starts) - 1
@@ -418,19 +460,22 @@ def main():
     t0 = time.time()
     gen = 0
     while time.time() - t0 < budget:
-        scores = np.array([fitness_chunks(g, chunks) for g in pop])
+        res = [fitness_and_daily(g, chunks) for g in pop]
+        scores = np.array([r[0] for r in res]); daily = np.array([r[1] for r in res])
         order = np.argsort(-scores)
-        pop = [pop[i] for i in order]; scores = scores[order]
+        pop = [pop[i] for i in order]; scores = scores[order]; daily = daily[order]
+        alive = [i for i in range(len(pop)) if daily[i] >= SURVIVE_DAILY][:MAX_SURVIVORS]
+        n_alive = len(alive)
         gen += 1; cur["gens"] += 1; state["total_gens"] += 1
         if gen % CHECK_EVERY == 0 or gen == 1:
             e = evaluate(pop[0], B)
             cur["best_avg_daily"] = e["avg_daily"]
             gen_log.append({"gen": state["total_gens"], "stage": cur["n"], "best": float(scores[0]),
                             "top20": float(scores[:ELITE].mean()), "mean": float(np.mean(np.maximum(scores, -50))),
-                            "avg_daily": e["avg_daily"]})
+                            "avg_daily": e["avg_daily"], "alive": n_alive})
             if gen % (CHECK_EVERY * 4) == 0 or gen == 1:
                 print(f"  {cur['n']}단계 {cur['gens']}세대: 1등 점수 {scores[0]:+.2f}, 하루 평균 {e['avg_daily']*100:+.3f}% "
-                      f"(목표 +{GOAL_DAILY*100:.0f}%), 거래 {e['trades_per_day']:.1f}회/일", flush=True)
+                      f"(목표 +{GOAL_DAILY*100:.0f}%), 거래 {e['trades_per_day']:.1f}회/일, 생존 {n_alive}/{POP}", flush=True)
             done = e["avg_daily"] >= GOAL_DAILY
             if done or cur["gens"] >= STAGE_MAX_GENS:
                 rec = {**cur, "ended": datetime.now(KST).strftime("%Y-%m-%d %H:%M"),
@@ -445,10 +490,23 @@ def main():
                 B, chunks, a_lbl, b_lbl = make_block(D, starts, nf)
                 cur = {"n": cur["n"] + 1, "first_day_num": int(day[starts[nf]]), "from": a_lbl, "to": b_lbl,
                        "gens": 0, "best_avg_daily": None, "started": datetime.now(KST).strftime("%Y-%m-%d %H:%M")}
-        nxt = pop[:ELITE]
+        # 생존 규칙: 하루 평균 +0.1% 이상만 살아남고, 나머지는 죽음 → 빈자리는 생존자의 자식으로 채움
+        if n_alive >= 2:
+            parents = [pop[i] for i in alive]
+            nxt = list(parents)
+            n_new = 0
+        else:
+            # 생존자가 0~1마리면 대가 끊기지 않게: 점수 상위 5마리를 임시 부모로 + 새 개체 절반
+            parents = pop[:5]
+            nxt = [pop[i] for i in alive]
+            n_new = POP // 2
+            nxt += [random_genome() for _ in range(n_new)]
         while len(nxt) < POP:
-            i, j = random.sample(range(POP // 2), 2)
-            nxt.append(mutate(crossover(pop[i], pop[j])))
+            if len(parents) >= 2:
+                a, b = random.sample(parents, 2)
+            else:
+                a = b = parents[0]
+            nxt.append(mutate(crossover(a, b)))
         pop = nxt
     state["current"] = cur
     print(f"이번 실행 {gen}세대 진화 완료 ({(time.time()-t0)/60:.1f}분)", flush=True)
