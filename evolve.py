@@ -12,6 +12,9 @@ evolve.py — 단계별로 스스로 진화하는 트레이딩 AI (모의투자,
   - 생존 규칙: 매 세대 하루 평균 +0.1% 이상 '그리고' 70% 이상의 날에 거래한 개체만 생존
   - 포지션은 최대 24시간까지만 보유 (넘으면 자동 청산)
   - 챔피언 자격: 실전 9일 중 6일 이상 거래, 하루 평균 1~10회 거래, 청산 없음 (5코인 평균)
+                 + 상승·하락 균형: 5코인 지난 달들 중 오른 달·내린 달 AI 평균 수익이 둘 다 플러스
+  - 단계 선택: 상승장 30일 ↔ 하락장 30일을 번갈아 뽑음 · 한 단계 최대 3000세대
+  - 실행 100번째(MAX_RUNS)까지 진화하고 멈춤
       자격 있는 AI가 없으면 '자격 있는 AI 없음'으로 표시
   - 복습 섞기: 학습 점수 = 지금 단계 70% + 지난 단계(최근 12개 중 랜덤 2개) 복습 30%
       → 구간마다 외우고 잊는 대신, 여러 구간에 통하는 공통 실력이 남도록
@@ -54,7 +57,8 @@ COIN_NAMES   = {"BTC": "비트코인", "ETH": "이더리움", "SOL": "솔라나"
 BLOCK_DAYS   = 30      # 한 단계에서 학습할 기간 (일) — 랜덤 코인 x 랜덤 30일
 CHUNKS       = 4       # 꾸준함 평가용 토막 수
 GOAL_DAILY   = 0.01    # 졸업 기준: 하루 평균 +1%
-STAGE_MAX_GENS = 6000  # 한 단계 최대 세대 (넘으면 미달로 다음 단계)
+STAGE_MAX_GENS = 3000  # 한 단계 최대 세대 (넘으면 미달로 다음 단계) — 막힌 단계에 시간 덜 쓰게 6000 → 3000
+MAX_RUNS     = int(os.environ.get("MAX_RUNS", "100"))   # 실행 100번째까지만 진화하고 멈춤
 RUN_MINUTES  = float(os.environ.get("RUN_MINUTES", "45"))   # 한 번 실행에 진화할 시간(분)
 CHECK_EVERY  = 25      # 몇 세대마다 졸업 여부 확인
 VAL_DAYS     = 8
@@ -455,18 +459,27 @@ def make_block(C, first_day):
     return B, block_chunks(B), day_label(D, a), day_label(D, b - 1)
 
 
-def pick_new_block(coins, used):
-    """랜덤 코인 x 랜덤 30일. 같은 코인에서 이미 학습한 기간과 겹치는 곳은 피함"""
-    best, best_ov = None, 1e9
-    for _ in range(80):
+def block_regime(C, f):
+    """그 30일 동안 코인이 올랐으면 'up', 내렸으면 'down'"""
+    D, st_ = C["D"], C["starts"]
+    c0, c1 = D["close"][st_[f]], D["close"][st_[f + BLOCK_DAYS] - 1]
+    return "up" if c1 > c0 else "down"
+
+
+def pick_new_block(coins, used, want=None):
+    """랜덤 코인 x 랜덤 30일. 원하는 장세(상승/하락)를 우선, 이미 학습한 기간과 겹치는 곳은 피함"""
+    best, best_key = None, (9, 1e9)
+    for _ in range(200):
         coin = random.choice(list(coins))
         C = coins[coin]
         f = random.randint(0, C["tr_days"] - BLOCK_DAYS)
         dn = int(C["udays"][f])
         ov = max([max(0, min(dn + BLOCK_DAYS, u + BLOCK_DAYS) - max(dn, u)) for (uc, u) in used if uc == coin] or [0])
-        if ov < best_ov:
-            best, best_ov = (coin, f), ov
-        if ov == 0:
+        miss = 0 if (want is None or block_regime(C, f) == want) else 1
+        key = (miss, ov)
+        if key < best_key:
+            best, best_key = (coin, f), key
+        if key == (0, 0):
             break
     return best
 
@@ -500,6 +513,10 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     np.random.seed(int(time.time()) % 2**31); random.seed(int(time.time()))
     t_start = time.time()
+    _st = load_json(f"{OUT}/state.json", {})
+    if _st.get("run", 0) >= MAX_RUNS:
+        print(f"목표한 실행 {MAX_RUNS}번을 모두 마쳤어요 → 진화 종료 (MAX_RUNS 값을 올리면 이어서 진화)", flush=True)
+        return
 
     # 코인별 데이터 준비
     coins = {}
@@ -539,10 +556,13 @@ def main():
 
     def new_stage(n):
         used = [(s_["coin"], s_["first_day_num"]) for s_ in state["stages"] if "coin" in s_]
-        coin, f = pick_new_block(coins, used)
+        last = state["stages"][-1].get("regime") if state["stages"] else None
+        want = "up" if last == "down" else ("down" if last == "up" else random.choice(["up", "down"]))
+        coin, f = pick_new_block(coins, used, want)       # 상승장 ↔ 하락장 번갈아
         C = coins[coin]
         _, _, a_lbl, b_lbl = make_block(C, f)
         return {"n": n, "coin": coin, "first_day_num": int(C["udays"][f]), "from": a_lbl, "to": b_lbl,
+                "regime": block_regime(C, f),
                 "gens": 0, "best_avg_daily": None, "started": datetime.now(KST).strftime("%Y-%m-%d %H:%M")}
 
     cur = state.get("current")
@@ -554,7 +574,7 @@ def main():
 
     gen_log = []
     graduations = []
-    budget = RUN_MINUTES * 60 - (time.time() - t_start) - 300
+    budget = RUN_MINUTES * 60 - (time.time() - t_start) - 480
     t0 = time.time()
     gen = 0
     while time.time() - t0 < budget:
@@ -621,35 +641,72 @@ def main():
         return bool(td >= CHAMP_TRADE_DAYS and CHAMP_TPD[0] <= tpd <= CHAMP_TPD[1]
                     and not any(e["liquidations"] for e in es)), float(td), float(tpd)
 
-    # 도전자: 상위 20마리 중 검증 구간에서 자격(거래 빈도)을 갖춘 개체 우선, 그중 점수 최고
+    # 상승장·하락장 균형 시험: 5개 코인 x 지난 달들, 코인이 오른 달 / 내린 달의 AI 월평균 수익이 둘 다 플러스여야
+    month_sets = []
+    for k, Cm in coins.items():
+        Dm = Cm["D"]
+        mk = pd.Index(Dm["ts"]).strftime("%Y-%m")
+        for m in sorted(set(mk)):
+            ix = np.nonzero(mk == m)[0]
+            if len(ix) >= BPD * 20:
+                Sm = seg(Dm, ix[0], ix[-1] + 1)
+                month_sets.append((k, m, Sm, Sm["close"][-1] > Sm["close"][0]))
+
+    def balance(g):
+        up, dn = [], []
+        for k, m, Sm, is_up in month_sets:
+            r = evaluate(g, Sm)["ret"]
+            (up if is_up else dn).append(r)
+        u = float(np.mean(up)) if up else 0.0
+        d_ = float(np.mean(dn)) if dn else 0.0
+        plus = sum(1 for r in up + dn if r > 0) / max(1, len(up) + len(dn))
+        return (u > 0 and d_ > 0), {"up_avg": u, "down_avg": d_, "plus_ratio": plus,
+                                     "up_n": len(up), "down_n": len(dn)}
+
+    # 도전자: 상위 20마리 중 (거래 빈도 + 상승·하락 균형) 자격을 갖춘 개체 중 검증 점수 최고
     cands = []
     for g in pop[:20]:
         sc, _, es = mean_eval(g, VAs)
         cands.append((qualified(es)[0], sc, g))
     cands.sort(key=lambda x: (x[0], x[1]), reverse=True)
-    ch = cands[0][2]
+    ch, ch_bal = None, None
+    for ok_f, sc, g in cands:
+        if not ok_f:
+            break
+        ok_b, bal = balance(g)
+        if ok_b:
+            ch, ch_bal = g, bal
+            break
+    if ch is None:
+        ch = cands[0][2]
+        ch_bal = balance(ch)[1]
     ch_sc, ch_avg, ch_es = mean_eval(ch, list(TEs.values()))
     ch_ok, ch_td, ch_tpd = qualified(ch_es)
+    ch_ok = ch_ok and ch_bal["up_avg"] > 0 and ch_bal["down_avg"] > 0
     champ = np.array(state["champion"]) if state["champion"] else None
     cp_ok = False
+    cp_bal = ch_bal
     if champ is not None:
         cp_sc, cp_avg, cp_es = mean_eval(champ, list(TEs.values()))
         cp_ok, cp_td, cp_tpd = qualified(cp_es)
-        if not cp_ok:
-            print("기존 챔피언이 거래 빈도 자격 미달 → 해임", flush=True)
-            state["champion"] = None; champ = None
+        ok_b, cp_bal = balance(champ)
+        if not (cp_ok and ok_b):
+            print("기존 챔피언이 자격 미달(거래 빈도 또는 상승·하락 균형) → 해임", flush=True)
+            state["champion"] = None; champ = None; cp_bal = ch_bal
     replaced = False
     if ch_ok and (champ is None or ch_sc > cp_sc):
         state["champion"] = ch.tolist()
         state["champion_id"] = f"G{state['total_gens']}-S{cur['n']}"
         state["champion_born"] = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
         cp_sc, cp_avg, cp_es, cp_td, cp_tpd = ch_sc, ch_avg, ch_es, ch_td, ch_tpd
+        cp_bal = ch_bal
         replaced = True
     champ_qualified = state["champion"] is not None
     if not champ_qualified:
         # 자격 있는 AI가 없으면 도전자 성적을 '임시'로 보여줌
         state["champion_id"] = None
         cp_sc, cp_avg, cp_es, cp_td, cp_tpd = ch_sc, ch_avg, ch_es, ch_td, ch_tpd
+        cp_bal = ch_bal
         champ = ch
     else:
         champ = np.array(state["champion"])
@@ -749,7 +806,10 @@ def main():
         "replaced": bool(replaced),
         "champion_qualified": champ_qualified,
         "champion_rules": {"trade_days": f"실전 9일 중 {CHAMP_TRADE_DAYS}일 이상 거래", "tpd": f"하루 {CHAMP_TPD[0]:g}~{CHAMP_TPD[1]:g}회",
-                           "trade_days_now": cp_td, "tpd_now": cp_tpd},
+                           "trade_days_now": cp_td, "tpd_now": cp_tpd,
+                           "balance": "5개 코인의 지난 달들 중 오른 달·내린 달 AI 평균 수익이 둘 다 플러스",
+                           "balance_now": cp_bal},
+        "max_runs": MAX_RUNS,
         "champion": {"id": shown_id, "born": state["champion_born"] if champ_qualified else None,
                      **{k: cp_te[k] for k in keys}, "threshold": th, "now_position": now_pos,
                      "features": [{"name": FEATURES[i], "used": bool(mask[i] > 0), "weight": float(imp[i]),
@@ -781,7 +841,7 @@ def main():
         f"{'교체' if h['replaced'] else '유지'} |" for h in hist[-30:][::-1])
     md = f"""# 🧬 단계별 진화 트레이딩 AI 리포트 (여러 코인)
 
-_마지막 실행: {now} KST · 실행 #{run_no} · 누적 {state['total_gens']}세대 · 이번 실행 {gen}세대 ({secs/60:.0f}분)_
+_마지막 실행: {now} KST · 실행 #{run_no}/{MAX_RUNS} · 누적 {state['total_gens']}세대 · 이번 실행 {gen}세대 ({secs/60:.0f}분)_
 
 > 모의투자 실험입니다. 실제 주문은 하지 않습니다. **최종 목표: 하루 +1% 수익을 내는 AI**
 > 학습: 랜덤 코인({', '.join(COIN_NAMES.get(k, k) for k in coins)}) x 랜덤 30일을 반복 학습 → 1등이 하루 평균 +1% 달성하면 졸업 → 다음 랜덤 코인·30일
@@ -797,7 +857,8 @@ _마지막 실행: {now} KST · 실행 #{run_no} · 누적 {state['total_gens']}
 {st_rows}
 
 ## 👑 챔피언 `{shown_id}` — 학습에 안 쓴 최근 {c['days']}일 실전 시험
-- **5개 코인 평균 하루 수익 {pct(cp_avg, 3)}** · 거래한 날 {cp_td:.1f}/9일 · 하루 거래 {cp_tpd:.1f}회 · {'✅ 챔피언 자격 있음' if champ_qualified else '❌ 자격 미달 (거래 빈도 조건)'}
+- **5개 코인 평균 하루 수익 {pct(cp_avg, 3)}** · 거래한 날 {cp_td:.1f}/9일 · 하루 거래 {cp_tpd:.1f}회 · {'✅ 챔피언 자격 있음' if champ_qualified else '❌ 자격 있는 AI 없음 (임시로 도전자 표시)'}
+- 상승·하락 균형 (5코인 지난 달들): 오른 달 평균 {pct(cp_bal['up_avg'])} ({cp_bal['up_n']}개월) · 내린 달 평균 {pct(cp_bal['down_avg'])} ({cp_bal['down_n']}개월) · 플러스인 달 {cp_bal['plus_ratio']*100:.0f}%
 
 | 코인 | 하루 평균 | 9일 합계 | 그냥 보유 | +1% 달성일 | 하루 거래 |
 |---|---|---|---|---|---|

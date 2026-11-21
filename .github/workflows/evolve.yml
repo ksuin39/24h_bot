@@ -25,7 +25,7 @@ jobs:
     timeout-minutes: 75
     env:
       RUN_MINUTES: '45'
-      CHAIN_UNTIL: '2026-11-23T00:00:00+09:00'   # 이 시각까지는 끝나자마자 다음 실행을 바로 이어서 시작
+      MAX_RUNS: '100'    # 실행 100번째까지 쉬지 않고 이어서 진화하고 멈춤
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -46,9 +46,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          now=$(date -u +%s); until=$(date -u -d "$CHAIN_UNTIL" +%s)
-          if [ "$now" -lt "$until" ]; then
+          git pull -q || true
+          run=$(python -c "import json;print(json.load(open('evolution/state.json')).get('run',0))" 2>/dev/null || echo 0)
+          echo "지금까지 실행: $run / $MAX_RUNS"
+          if [ "$run" -lt "$MAX_RUNS" ]; then
             gh workflow run evolve.yml --ref main && echo "다음 실행 예약됨"
           else
-            echo "연속 실행 기간 종료 - 이후는 매시간 예약 실행만"
+            echo "목표한 실행 횟수 도달 - 연속 실행 종료"
           fi

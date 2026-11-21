@@ -71,7 +71,7 @@
     <div class="bar" style="margin-top:8px"><i id="kAvgBar" style="width:0;background:var(--green)"></i></div></div>
   <div class="card kpi"><h2>🎯 목표 달성일</h2><div class="v" id="kHit">-</div><div class="s" id="kHitS">-</div></div>
   <div class="card kpi"><h2>👑 챔피언 점수 (시험 구간)</h2><div class="v" id="kScore">-</div><div class="s" id="kChamp">-</div></div>
-  <div class="card kpi"><h2>다음 자동 진화</h2><div class="v" id="kNext">-</div><div class="s">매시간 자동 (한 번에 약 45분)</div></div>
+  <div class="card kpi"><h2>다음 자동 진화</h2><div class="v" id="kNext">-</div><div class="s">끝나면 바로 다음 실행 (100번까지, 한 번에 약 45분)</div></div>
 
   </div>
 
@@ -240,7 +240,7 @@ async function loadData(){
   const c = L.champion;
 
   // KPI
-  $("kDay").textContent = `#${L.day}`;
+  $("kDay").textContent = L.max_runs ? `#${L.day} / ${L.max_runs}` : `#${L.day}`;
   $("kGens").textContent = `누적 ${L.total_gens.toLocaleString()}세대 · 이번 ${L.generations_today}세대 · ${L.updated}`;
   const tgt = L.settings.daily_target;
   const fp = (x,d=2)=>(x>=0?"+":"")+x.toFixed(d);
@@ -253,7 +253,10 @@ async function loadData(){
   if (L.champion_rules) {
     const R = L.champion_rules, ok = L.champion_qualified;
     $("champQual").innerHTML = `<span class="badge ${ok?"ok":"fail"}">${ok?"✅ 챔피언 자격 있음":"❌ 자격 있는 AI 없음 — 임시로 도전자 표시"}</span>
-      <span class="muted" style="font-size:12px"> 거래한 날 ${R.trade_days_now.toFixed(1)}/9일 · 하루 ${R.tpd_now.toFixed(1)}회 (기준: ${R.trade_days}, ${R.tpd}, 청산 없음)</span>`;
+      <span class="muted" style="font-size:12px"> 거래한 날 ${R.trade_days_now.toFixed(1)}/9일 · 하루 ${R.tpd_now.toFixed(1)}회 (기준: ${R.trade_days}, ${R.tpd}, 청산 없음)</span>` +
+      (R.balance_now ? `<div class="muted" style="font-size:12px;margin-top:4px">상승·하락 균형: 코인이 오른 달 AI 평균
+        <b class="${cls(R.balance_now.up_avg)}">${fmtPct(R.balance_now.up_avg,1)}</b> (${R.balance_now.up_n}개월) · 내린 달
+        <b class="${cls(R.balance_now.down_avg)}">${fmtPct(R.balance_now.down_avg,1)}</b> (${R.balance_now.down_n}개월) · 플러스인 달 ${Math.round(R.balance_now.plus_ratio*100)}% — 둘 다 플러스여야 자격</div>` : "");
   }
   if (L.coin_tests) {
     $("coinTests").querySelector("tbody").innerHTML = Object.entries(L.coin_tests).map(([k,v])=>`<tr>
@@ -273,7 +276,7 @@ async function loadData(){
 
   // 단계
   const CU = L.curriculum, cu = CU.current, lb = CU.leader_on_block;
-  $("stTitle").textContent = `${cu.n}단계 · ${(L.coins||{})[cu.coin]||cu.coin||""} · ${cu.from} ~ ${cu.to}`;
+  $("stTitle").textContent = `${cu.n}단계 · ${(L.coins||{})[cu.coin]||cu.coin||""} · ${cu.from} ~ ${cu.to}${cu.regime?(cu.regime==="up"?" · 📈 상승장":" · 📉 하락장"):""}`;
   $("stAvg").innerHTML = `<span class="${cls(lb.avg_daily)}">${fmtPct(lb.avg_daily,3)}</span>`;
   $("stGens").textContent = `${cu.gens.toLocaleString()} / ${L.settings.stage_max_gens.toLocaleString()}`;
   $("stDone").textContent = `${CU.graduated_total} / ${CU.failed_total}`;
