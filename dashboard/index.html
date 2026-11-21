@@ -57,7 +57,7 @@
 <body>
 <header>
   <h1>🧬 단계별 진화 트레이딩 AI 대시보드
-    <small>최종 목표: 하루 +1% · 랜덤 코인(BTC·ETH·SOL·XRP·DOGE) × 랜덤 30일 반복 학습 → 목표 달성 시 다음 · 생존: 하루 +0.1% 이상 & 거래한 날 70% 이상 · 포지션 최대 24시간 · BTC 레버리지 최대 5배 · 점수 = 수익 + 보너스(2배) − 손실 보유 감점 · 매시간 자동 진화 · 모의투자 · 1분마다 자동 새로고침</small>
+    <small>최종 목표: 하루 +1% · 상승장 30일 + 하락장 30일 동시 학습 (랜덤 코인) → 둘 다 목표 달성 시 다음 · 생존: 하루 +0.1% 이상 & 거래한 날 70% 이상 · 포지션 최대 24시간 · BTC 레버리지 최대 5배 · 점수 = 수익 + 보너스(2배) − 손실 보유 감점 · 매시간 자동 진화 · 모의투자 · 1분마다 자동 새로고침</small>
   </h1>
   <div class="status"><span class="dot" id="dot"></span><span id="statusText">상태 확인 중…</span></div>
 </header>
@@ -78,7 +78,7 @@
   <div class="card two3">
     <h2>🎓 지금 학습 중인 단계 <span id="stTitle" class="muted"></span></h2>
     <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end">
-      <div><div class="muted" style="font-size:12px">1등의 이 구간 하루 평균 (목표 +1%)</div><div id="stAvg" style="font-size:30px;font-weight:800">-</div></div>
+      <div><div class="muted" style="font-size:12px">1등의 하루 평균 — 상승장·하락장 중 낮은 쪽 (목표 +1%)</div><div id="stAvg" style="font-size:30px;font-weight:800">-</div></div>
       <div><div class="muted" style="font-size:12px">이 단계 세대</div><div id="stGens" style="font-size:22px;font-weight:700">-</div></div>
       <div><div class="muted" style="font-size:12px">졸업 / 미달</div><div id="stDone" style="font-size:22px;font-weight:700">-</div></div>
     </div>
@@ -276,12 +276,14 @@ async function loadData(){
 
   // 단계
   const CU = L.curriculum, cu = CU.current, lb = CU.leader_on_block;
-  $("stTitle").textContent = `${cu.n}단계 · ${(L.coins||{})[cu.coin]||cu.coin||""} · ${cu.from} ~ ${cu.to}${cu.regime?(cu.regime==="up"?" · 📈 상승장":" · 📉 하락장"):""}`;
+  $("stTitle").textContent = cu.label ? `${cu.n}단계 · 상승장+하락장 동시 학습` :
+    `${cu.n}단계 · ${(L.coins||{})[cu.coin]||cu.coin||""} · ${cu.from} ~ ${cu.to}`;
   $("stAvg").innerHTML = `<span class="${cls(lb.avg_daily)}">${fmtPct(lb.avg_daily,3)}</span>`;
   $("stGens").textContent = `${cu.gens.toLocaleString()} / ${L.settings.stage_max_gens.toLocaleString()}`;
   $("stDone").textContent = `${CU.graduated_total} / ${CU.failed_total}`;
   $("stBar").style.width = Math.min(100, Math.max(0, lb.avg_daily/tgt*100)) + "%";
-  $("stNote").textContent = `목표 대비 ${Math.round(Math.max(0,lb.avg_daily)/tgt*100)}% · 이 구간에서 하루 거래 ${lb.trades_per_day.toFixed(1)}회 · +1% 달성 ${lb.hit_days}/${lb.days}일 · 구간 합계 ${fmtPct(lb.ret)} · 단계 시작 ${cu.started}`;
+  const PN = CU.parts_now ? CU.parts_now.map(p=>`${p.regime==="up"?"📈 상승장":"📉 하락장"} ${(L.coins||{})[p.coin]||p.coin} ${p.from}~${p.to}: ${fmtPct(p.avg_daily,3)}`).join("  ·  ") + "  (둘 다 +1% 넘으면 졸업, 낮은 쪽 기준)  ·  " : "";
+  $("stNote").textContent = PN + `목표 대비 ${Math.round(Math.max(0,lb.avg_daily)/tgt*100)}% · 이 구간에서 하루 거래 ${lb.trades_per_day.toFixed(1)}회 · +1% 달성 ${lb.hit_days}/${lb.days}일 · 구간 합계 ${fmtPct(lb.ret)} · 단계 시작 ${cu.started}`;
   drawChart("cStage", {type:"line", data:{labels:CU.leader_block_curve.map((_,i)=>i), datasets:[
     {label:"1등의 이 구간 자산 (시작=100)", data:CU.leader_block_curve.map(v=>v*100), borderColor:"#e3b341", pointRadius:0, borderWidth:2, fill:true, backgroundColor:"rgba(227,179,65,.08)"}]},
     options:{scales:{x:{display:false}}}});

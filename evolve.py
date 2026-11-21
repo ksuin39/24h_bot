@@ -13,7 +13,9 @@ evolve.py — 단계별로 스스로 진화하는 트레이딩 AI (모의투자,
   - 포지션은 최대 24시간까지만 보유 (넘으면 자동 청산)
   - 챔피언 자격: 실전 9일 중 6일 이상 거래, 하루 평균 1~10회 거래, 청산 없음 (5코인 평균)
                  + 상승·하락 균형: 5코인 지난 달들 중 오른 달·내린 달 AI 평균 수익이 둘 다 플러스
-  - 단계 선택: 상승장 30일 ↔ 하락장 30일을 번갈아 뽑음 · 한 단계 최대 3000세대
+  - 단계 구성: 상승장 30일 + 하락장 30일을 '동시에' 학습. 점수·생존·졸업 모두 '둘 중 낮은 쪽' 기준
+      → 롱만/숏만 하는 AI는 한쪽에서 져서 탈락, 장세를 알아보고 방향을 바꾸는 AI만 살아남게
+    한 단계 최대 3000세대
   - 실행 100번째(MAX_RUNS)까지 진화하고 멈춤
       자격 있는 AI가 없으면 '자격 있는 AI 없음'으로 표시
   - 복습 섞기: 학습 점수 = 지금 단계 70% + 지난 단계(최근 12개 중 랜덤 2개) 복습 30%
@@ -484,6 +486,14 @@ def pick_new_block(coins, used, want=None):
     return best
 
 
+def stage_parts(stage, coins):
+    """단계에 들어있는 학습 구간들 (새 방식: 상승+하락 2개, 예전 방식: 1개)"""
+    parts = stage.get("parts") or ([{"coin": stage["coin"], "first_day_num": stage["first_day_num"],
+                                      "from": stage["from"], "to": stage["to"], "regime": stage.get("regime")}]
+                                    if stage.get("coin") in coins else [])
+    return [p_ for p_ in parts if p_["coin"] in coins]
+
+
 def locate(C, day_num):
     f = int(np.searchsorted(C["udays"], day_num))
     return min(max(f, 0), C["tr_days"] - BLOCK_DAYS)
@@ -555,22 +565,38 @@ def main():
     run_no = state["run"]
 
     def new_stage(n):
-        used = [(s_["coin"], s_["first_day_num"]) for s_ in state["stages"] if "coin" in s_]
-        last = state["stages"][-1].get("regime") if state["stages"] else None
-        want = "up" if last == "down" else ("down" if last == "up" else random.choice(["up", "down"]))
-        coin, f = pick_new_block(coins, used, want)       # 상승장 ↔ 하락장 번갈아
-        C = coins[coin]
-        _, _, a_lbl, b_lbl = make_block(C, f)
-        return {"n": n, "coin": coin, "first_day_num": int(C["udays"][f]), "from": a_lbl, "to": b_lbl,
-                "regime": block_regime(C, f),
+        """상승장 30일 + 하락장 30일을 한 단계에서 '동시에' 학습"""
+        used = []
+        for s_ in state["stages"]:
+            used += [(p_["coin"], p_["first_day_num"]) for p_ in stage_parts(s_, coins)]
+        parts = []
+        for want in ["up", "down"]:
+            coin, f = pick_new_block(coins, used, want)
+            C = coins[coin]
+            _, _, a_lbl, b_lbl = make_block(C, f)
+            parts.append({"coin": coin, "first_day_num": int(C["udays"][f]), "from": a_lbl, "to": b_lbl,
+                          "regime": block_regime(C, f)})
+            used.append((coin, int(C["udays"][f])))
+        return {"n": n, "parts": parts,
+                "coin": f"{parts[0]['coin']}📈+{parts[1]['coin']}📉",
+                "from": parts[0]["from"], "to": parts[0]["to"],
+                "label": " / ".join(f"{COIN_NAMES.get(p_['coin'], p_['coin'])} {p_['from']}~{p_['to']} "
+                                    f"({'상승' if p_['regime'] == 'up' else '하락'})" for p_ in parts),
                 "gens": 0, "best_avg_daily": None, "started": datetime.now(KST).strftime("%Y-%m-%d %H:%M")}
 
+    def load_blocks(stage):
+        out = []
+        for p_ in stage_parts(stage, coins):
+            C = coins[p_["coin"]]
+            B_, ch_, _, _ = make_block(C, locate(C, p_["first_day_num"]))
+            out.append((B_, ch_, p_))
+        return out
+
     cur = state.get("current")
-    if cur is None or cur.get("coin") not in coins:
+    if cur is None or "parts" not in cur or not stage_parts(cur, coins):
         cur = new_stage(cur["n"] if cur else 1)
-    C = coins[cur["coin"]]
-    B, chunks, a_lbl, b_lbl = make_block(C, locate(C, cur["first_day_num"]))
-    print(f"=== 실행 #{run_no} · {cur['n']}단계 [{cur['coin']}] {a_lbl} ~ {b_lbl} · 이 단계 누적 {cur['gens']}세대 ===", flush=True)
+    blocks = load_blocks(cur)
+    print(f"=== 실행 #{run_no} · {cur['n']}단계 [{cur['label']}] · 이 단계 누적 {cur['gens']}세대 ===", flush=True)
 
     gen_log = []
     graduations = []
@@ -578,17 +604,21 @@ def main():
     t0 = time.time()
     gen = 0
     while time.time() - t0 < budget:
-        res = [fitness_and_daily(g, chunks) for g in pop]
-        scores = np.array([r[0] for r in res]); daily = np.array([r[1] for r in res])
-        tdr = np.array([r[2] for r in res])
+        # 상승장·하락장 두 구간을 모두 풀고 '낮은 쪽' 성적으로 평가 → 한 방향만 하는 AI는 탈락
+        res = [[fitness_and_daily(g, ch_) for (_, ch_, _) in blocks] for g in pop]
+        scores = np.array([min(r[0] for r in rr) for rr in res])
+        daily = np.array([min(r[1] for r in rr) for rr in res])
+        tdr = np.array([min(r[2] for r in rr) for rr in res])
         # 복습 섞기: 지난 단계 중 랜덤 2개를 같이 풀게 해서 30% 반영
-        past = [s_ for s_ in state["stages"][-12:] if s_.get("coin") in coins]
+        past = []
+        for s_ in state["stages"][-12:]:
+            past += stage_parts(s_, coins)
         if past and REVIEW_W > 0:
             picks = random.sample(past, min(REVIEW_PICK, len(past)))
             rblocks = []
-            for s_ in picks:
-                Cr = coins[s_["coin"]]
-                rblocks.append(make_block(Cr, locate(Cr, s_["first_day_num"]))[0])
+            for p_ in picks:
+                Cr = coins[p_["coin"]]
+                rblocks.append(make_block(Cr, locate(Cr, p_["first_day_num"]))[0])
             rev = np.array([review_score(g, rblocks) for g in pop])
             scores = (1 - REVIEW_W) * scores + REVIEW_W * rev
         order = np.argsort(-scores)
@@ -598,13 +628,16 @@ def main():
         n_alive = len(alive)
         gen += 1; cur["gens"] += 1; state["total_gens"] += 1
         if gen % CHECK_EVERY == 0 or gen == 1:
-            e = evaluate(pop[0], B)
+            es_ = [evaluate(pop[0], B_) for (B_, _, _) in blocks]
+            e = min(es_, key=lambda x: x["avg_daily"])          # 둘 중 못한 쪽 기준
             cur["best_avg_daily"] = e["avg_daily"]
+            cur["parts_avg_daily"] = [x["avg_daily"] for x in es_]
             gen_log.append({"gen": state["total_gens"], "stage": cur["n"], "coin": cur["coin"], "best": float(scores[0]),
                             "top20": float(scores[:ELITE].mean()), "mean": float(np.mean(np.maximum(scores, -50))),
                             "avg_daily": e["avg_daily"], "alive": n_alive})
             if gen % (CHECK_EVERY * 4) == 0 or gen == 1:
-                print(f"  {cur['n']}단계[{cur['coin']}] {cur['gens']}세대: 1등 하루 평균 {e['avg_daily']*100:+.3f}% "
+                print(f"  {cur['n']}단계[{cur['coin']}] {cur['gens']}세대: 1등 하루 평균 상승장 {es_[0]['avg_daily']*100:+.3f}% / "
+                      f"하락장 {es_[-1]['avg_daily']*100:+.3f}% "
                       f"(목표 +{GOAL_DAILY*100:.0f}%), 거래 {e['trades_per_day']:.1f}회/일, 생존 {n_alive}/{POP}", flush=True)
             done = e["avg_daily"] >= GOAL_DAILY
             if done or cur["gens"] >= STAGE_MAX_GENS:
@@ -613,10 +646,9 @@ def main():
                 state["stages"].append(rec)
                 graduations.append(rec)
                 print(f"  ★ {cur['n']}단계[{cur['coin']}] {'졸업! (목표 달성)' if done else '미달 (세대 한도)'} "
-                      f"하루 평균 {e['avg_daily']*100:+.3f}% → 다음 랜덤 코인·30일로", flush=True)
+                      f"(둘 중 낮은 쪽) 하루 평균 {e['avg_daily']*100:+.3f}% → 다음 상승장+하락장 구간으로", flush=True)
                 cur = new_stage(cur["n"] + 1)
-                C = coins[cur["coin"]]
-                B, chunks, a_lbl, b_lbl = make_block(C, locate(C, cur["first_day_num"]))
+                blocks = load_blocks(cur)
         # 생존 규칙: 하루 평균 +0.1% 이상만 생존
         if n_alive >= 2:
             parents = [pop[i] for i in alive]
@@ -631,7 +663,7 @@ def main():
     state["current"] = cur
     print(f"이번 실행 {gen}세대 진화 완료 ({(time.time()-t0)/60:.1f}분)", flush=True)
 
-    scores = np.array([fitness_chunks(g, chunks) for g in pop])
+    scores = np.array([min(fitness_chunks(g, ch_) for (_, ch_, _) in blocks) for g in pop])
     order = np.argsort(-scores); pop = [pop[i] for i in order]; final_scores = scores[order]
 
     # 도전자: 상위 10마리 중 모든 코인 검증 구간 평균이 가장 좋은 개체
@@ -719,17 +751,21 @@ def main():
 
     # 현재 1등: 이번 단계 + 지난 단계 복습
     leader = pop[0]
-    lead_block = evaluate(leader, B)
+    lead_parts = [evaluate(leader, B_) for (B_, _, _) in blocks]
+    lead_block = dict(min(lead_parts, key=lambda x: x["avg_daily"]))
+    lead_block["curve"] = np.concatenate([x["curve"] / x["curve"][0] * (lead_parts[0]["curve"][-1] if i else 1.0)
+                                          for i, x in enumerate(lead_parts)])
+    B = blocks[0][0]
     stage_rows = []
     for s_ in state["stages"][-12:]:
-        if s_.get("coin") not in coins:
+        bl = load_blocks(s_)
+        if not bl:
             continue
-        Cs = coins[s_["coin"]]
-        Bs, _, _, _ = make_block(Cs, locate(Cs, s_["first_day_num"]))
-        e_ = evaluate(leader, Bs)
+        e_ = min((evaluate(leader, B_)["avg_daily"] for (B_, _, _) in bl))
         stage_rows.append({"n": s_["n"], "coin": s_["coin"], "from": s_["from"], "to": s_["to"], "gens": s_["gens"],
+                           "label": s_.get("label", ""),
                            "result": s_["result"], "avg_daily_at_end": s_["final_avg_daily"],
-                           "avg_daily_now": e_["avg_daily"], "ended": s_["ended"]})
+                           "avg_daily_now": e_, "ended": s_["ended"]})
 
     # 월별 성적표 (챔피언, 비트코인 2년)
     months = []
@@ -792,7 +828,9 @@ def main():
         "settings": {"fee": FEE, "daily_target": GOAL_DAILY, "max_lev": COIN_MAX_LEV, "rules": RULES, "mode": "classic",
                      "profit_bonus": PROFIT_BONUS, "penalty_w": PENALTY_W, "stage_max_gens": STAGE_MAX_GENS,
                      "block_days": BLOCK_DAYS, "run_minutes": RUN_MINUTES, "survive_daily": SURVIVE_DAILY},
-        "curriculum": {"current": cur,
+        "curriculum": {"current": cur, "paired": True,
+                       "parts_now": [{"coin": p_["coin"], "from": p_["from"], "to": p_["to"], "regime": p_["regime"],
+                                      "avg_daily": e_["avg_daily"]} for (_, _, p_), e_ in zip(blocks, lead_parts)],
                        "leader_on_block": {k: lead_block[k] for k in ["avg_daily", "ret", "trades_per_day", "hit_days",
                                                                       "days", "score", "wins", "small_losses"]},
                        "leader_block_curve": [float(lb_curve[i]) for i in li],
@@ -848,8 +886,9 @@ _마지막 실행: {now} KST · 실행 #{run_no}/{MAX_RUNS} · 누적 {state['to
 > 생존: 매 세대 하루 평균 +0.1% 이상 + 거래한 날 70% 이상만 생존 · 포지션 최대 24시간 · 점수 = 수익 + 수익 보너스(2배) − 손실 보유 감점 · 레버리지: 비트코인만 최대 5배 (챔피언 {lev:.0f}배)
 > 📊 실시간 대시보드: https://ksuin39.github.io/24h_bot/dashboard/
 
-## 지금 단계: {cur['n']}단계 — {COIN_NAMES.get(cur['coin'], cur['coin'])} ({cur['from']} ~ {cur['to']})
-- 이 단계 누적 {cur['gens']}세대 · 1등의 이 30일 하루 평균 **{pct(lead_block['avg_daily'], 3)}** (목표 +1%)
+## 지금 단계: {cur['n']}단계 — 상승장+하락장 동시 학습
+- {cur['label']}
+- 이 단계 누적 {cur['gens']}세대 · 1등의 하루 평균: 상승장 **{pct(lead_parts[0]['avg_daily'], 3)}** / 하락장 **{pct(lead_parts[-1]['avg_daily'], 3)}** (둘 다 +1% 넘으면 졸업)
 - 지금까지 졸업 {latest['curriculum']['graduated_total']}단계 · 미달 {latest['curriculum']['failed_total']}단계
 
 | 단계 | 코인 | 기간 | 세대 | 결과 | 당시 하루 평균 | 지금 1등의 복습 |
