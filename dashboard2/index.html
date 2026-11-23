@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>진화형 트레이딩 AI v2</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--line:#2a313c;--text:#e6edf3;--sub:#8b949e;--green:#3fb950;--red:#f85149;--blue:#58a6ff;--gold:#e3b341;--purple:#bc8cff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;font-size:14px;line-height:1.5}
+  header{max-width:1200px;margin:0 auto;padding:20px 20px 8px;display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center}
+  h1{font-size:20px;margin:0} h1 small{display:block;font-size:12px;color:var(--sub);font-weight:400;margin-top:4px}
+  .status{display:flex;gap:8px;align-items:center;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:var(--panel);font-size:13px}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--sub)} .dot.live{background:var(--green);animation:p 1.6s infinite}
+  @keyframes p{50%{opacity:.4}}
+  main{max-width:1200px;margin:0 auto;padding:8px 20px 40px;display:grid;gap:14px;grid-template-columns:repeat(12,1fr)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;grid-column:span 12;min-width:0}
+  .card h2{font-size:14px;margin:0 0 12px;color:var(--sub);font-weight:600}
+  .kpis{grid-column:span 12;display:grid;gap:14px;grid-template-columns:repeat(4,1fr)}
+  .kpis .card{grid-column:auto}
+  @media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.half{grid-column:span 12!important}}
+  .half{grid-column:span 6}
+  .v{font-size:26px;font-weight:800} .s{font-size:12px;color:var(--sub)}
+  .pos{color:var(--green)} .neg{color:var(--red)} .muted{color:var(--sub)}
+  .chart{position:relative;height:260px}
+  .bar{height:10px;border-radius:6px;background:#21262d;overflow:hidden;margin-top:8px} .bar i{display:block;height:100%}
+  table{width:100%;border-collapse:collapse;font-size:13px} th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left} th{color:var(--sub);font-weight:600} .tw{overflow-x:auto}
+  .goal{font-size:18px;font-weight:800}
+  .feat{display:grid;grid-template-columns:170px 1fr 40px;gap:8px;align-items:center;margin:5px 0;font-size:13px}
+  .note{font-size:12px;color:var(--sub);margin-top:8px}
+  select{background:#21262d;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px 8px}
+  a{color:var(--blue)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧬 진화형 트레이딩 AI v2
+    <small>목표: 처음 보는 기간에서 하루 +1% (5코인 평균) · 1시간봉 · GitHub 서버 16대 병렬 진화 · 상위 10마리 투표 · 모의투자</small>
+  </h1>
+  <div class="status"><span class="dot" id="dot"></span><span id="st">확인 중…</span></div>
+</header>
+<main>
+  <div class="card" id="err" style="display:none"></div>
+  <div class="kpis">
+    <div class="card"><h2>🎯 목표 달성</h2><div class="goal" id="kGoal">-</div><div class="s" id="kGoalS">-</div></div>
+    <div class="card"><h2>💵 시험 30일 하루 평균 (5코인)</h2><div class="v" id="kTest">-</div><div class="s" id="kTestS">-</div>
+      <div class="bar"><i id="kTestBar" style="width:0;background:var(--green)"></i></div></div>
+    <div class="card"><h2>📅 검증 약 5달 플러스 비율</h2><div class="v" id="kVal">-</div><div class="s" id="kValS">-</div>
+      <div class="bar"><i id="kValBar" style="width:0;background:var(--purple)"></i></div></div>
+    <div class="card"><h2>⚙️ 진화</h2><div class="v" id="kRound">-</div><div class="s" id="kGens">-</div></div>
+  </div>
+
+  <div class="card">
+    <h2>🪙 시험: 마지막 30일 (학습·선발에 전혀 안 쓴 기간)</h2>
+    <div class="tw"><table id="tTest"><thead><tr><th>코인</th><th>앙상블 하루 평균</th><th>30일 합계</th><th>그냥 보유</th><th>+1% 달성일</th><th>거래한 날</th><th>하루 거래</th><th>1등 단독 하루</th></tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <div class="card half">
+    <h2>📈 시험 30일 자산 변화 <select id="selCoin"></select></h2>
+    <div class="chart"><canvas id="cCurve"></canvas></div>
+  </div>
+  <div class="card half">
+    <h2>🧪 라운드별 성적 (라운드가 쌓일수록 올라가야 함)</h2>
+    <div class="chart"><canvas id="cHist"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2>📅 검증 달별 (앙상블 vs 그냥 보유) — 선발에만 쓰고 학습엔 안 쓴 약 5달</h2>
+    <div class="chart" style="height:240px"><canvas id="cVal"></canvas></div>
+  </div>
+
+  <div class="card half">
+    <h2>🏝️ 섬 16개 (이번 라운드)</h2>
+    <div class="chart"><canvas id="cIsl"></canvas></div>
+    <div class="note">섬마다 따로 진화하고, 라운드가 끝나면 우수 개체를 서로 교환해요. 막대 = 이번 라운드 세대 수, 점 = 학습 1등 점수.</div>
+  </div>
+  <div class="card half">
+    <h2>👁️ 앙상블이 보는 정보 (10마리 평균 중요도)</h2>
+    <div id="feats"></div>
+  </div>
+
+  <div class="card">
+    <h2>⚙️ 실행 기록 (GitHub Actions)</h2>
+    <div class="tw"><table id="runs"><thead><tr><th>작업</th><th>상태</th><th>시작</th><th>소요</th></tr></thead><tbody></tbody></table></div>
+    <div class="note">v1 대시보드: <a href="../dashboard/">../dashboard/</a> · 저장소: <a href="https://github.com/ksuin39/24h_bot">ksuin39/24h_bot</a></div>
+  </div>
+</main>
+<script>
+const $=id=>document.getElementById(id), C={};
+const fp=(x,d=2)=>(x>=0?"+":"")+(x*100).toFixed(d)+"%", cls=x=>x>0?"pos":x<0?"neg":"muted";
+Chart.defaults.color="#8b949e"; Chart.defaults.borderColor="#2a313c";
+function draw(id,cfg){ if(C[id]) C[id].destroy(); cfg.options=Object.assign({responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:"index",intersect:false}},cfg.options||{}); C[id]=new Chart($(id),cfg); }
+async function J(u){ const r=await fetch(u+(u.includes("?")?"&":"?")+"t="+Date.now(),{cache:"no-store"}); if(!r.ok) throw new Error(u+" "+r.status); return r.json(); }
+let L=null;
+function curve(){ const k=$("selCoin").value, c=L.test_curves[k]; if(!c) return;
+  draw("cCurve",{type:"line",data:{labels:c.t,datasets:[
+    {label:"AI 앙상블",data:c.ai.map(v=>v*100),borderColor:"#3fb950",pointRadius:0,borderWidth:2,fill:true,backgroundColor:"rgba(63,185,80,.08)"},
+    {label:"그냥 보유",data:c.bh.map(v=>v*100),borderColor:"#8b949e",borderDash:[5,4],pointRadius:0,borderWidth:1.5}]},
+    options:{scales:{x:{ticks:{maxTicksLimit:7}},y:{title:{display:true,text:"자산 (시작=100)"}}}}}); }
+async function load(){
+  let H;
+  try{ [L,H]=await Promise.all([J("../v2/latest.json"),J("../v2/history.json")]); $("err").style.display="none"; }
+  catch(e){ $("err").style.display="block"; $("err").textContent="아직 v2 첫 라운드 결과가 없어요. 첫 라운드는 약 1시간 걸려요. ("+e.message+")"; return; }
+  const g=L.goal, tgt=L.settings.goal_daily, N=L.coin_names;
+  $("kGoal").innerHTML=g.met?'<span class="pos">✅ 달성</span>':'<span class="neg">❌ 아직</span>';
+  $("kGoalS").textContent=`조건: 시험 30일 하루 평균 ≥ +1% 그리고 검증 플러스 ≥ 70% · 갱신 ${L.updated}`;
+  $("kTest").innerHTML=`<span class="${cls(g.test_avg_daily)}">${fp(g.test_avg_daily,3)}</span>`;
+  $("kTestS").textContent=`목표 대비 ${Math.round(Math.max(0,g.test_avg_daily)/tgt*100)}% · BTC 레버리지 ${L.lev_btc}배 · 지금 BTC 판단: ${L.now_position==1?"🟢 롱":L.now_position==-1?"🔴 숏":"⚪ 관망"}`;
+  $("kTestBar").style.width=Math.min(100,Math.max(0,g.test_avg_daily)/tgt*100)+"%";
+  $("kVal").innerHTML=`<span class="${g.val_pos_months>=0.7?"pos":"neg"}">${Math.round(g.val_pos_months*100)}%</span>`;
+  $("kValS").textContent=`목표 70% · 검증 하루 평균 ${fp(L.ensemble_val.avg_daily,3)} · 코인-달 ${L.settings.val_sets}개`;
+  $("kValBar").style.width=Math.min(100,g.val_pos_months/0.7*100)+"%";
+  $("kRound").textContent=`라운드 ${L.round}`;
+  $("kGens").textContent=`누적 ${L.total_gens.toLocaleString()}세대 · 이번 ${L.round_gens.toLocaleString()}세대 · 섬 ${L.islands.length}개 · 시작 ${L.started}`;
+  $("tTest").querySelector("tbody").innerHTML=Object.entries(L.test).map(([k,r])=>`<tr><td>${N[k]||k}</td>
+    <td class="${cls(r.ens_avg_daily)}"><b>${fp(r.ens_avg_daily,3)}</b></td><td class="${cls(r.ens_ret)}">${fp(r.ens_ret)}</td>
+    <td class="${cls(r.bh)}">${fp(r.bh)}</td><td>${r.ens_hit}/${r.days}</td><td>${r.ens_trade_days}/${r.days}</td><td>${r.ens_tpd.toFixed(1)}</td>
+    <td class="${cls(r.best_avg_daily)}">${fp(r.best_avg_daily,3)}</td></tr>`).join("");
+  const sel=$("selCoin"); if(!sel.options.length){ Object.keys(L.test_curves).forEach(k=>{const o=document.createElement("option");o.value=k;o.textContent=N[k]||k;sel.appendChild(o);}); sel.onchange=curve; }
+  curve();
+  draw("cHist",{data:{labels:H.map(h=>"R"+h.round),datasets:[
+    {type:"line",label:"시험 하루 평균 % (앙상블)",data:H.map(h=>h.test_avg_daily*100),borderColor:"#3fb950",pointRadius:2,yAxisID:"y"},
+    {type:"line",label:"목표 +1%",data:H.map(()=>tgt*100),borderColor:"#3fb950",borderDash:[6,4],pointRadius:0,borderWidth:1,yAxisID:"y"},
+    {type:"line",label:"검증 플러스 비율 %",data:H.map(h=>h.val_pos_months*100),borderColor:"#bc8cff",pointRadius:2,yAxisID:"y2"}]},
+    options:{scales:{y:{title:{display:true,text:"하루 평균 %"}},y2:{position:"right",min:0,max:100,grid:{drawOnChartArea:false},title:{display:true,text:"플러스 %"}}}}});
+  const V=L.val_months;
+  draw("cVal",{type:"bar",data:{labels:V.map(m=>`${m.coin} ${m.month.slice(2)}`),datasets:[
+    {label:"AI 앙상블",data:V.map(m=>m.ret*100),backgroundColor:V.map(m=>m.ret>0?"rgba(63,185,80,.7)":"rgba(248,81,73,.6)")},
+    {label:"그냥 보유",data:V.map(m=>m.bh*100),backgroundColor:"rgba(139,148,158,.35)"}]},
+    options:{scales:{y:{title:{display:true,text:"그달 수익 %"}}}}});
+  const I=[...L.islands].sort((a,b)=>a.id-b.id);
+  draw("cIsl",{data:{labels:I.map(i=>"섬"+i.id),datasets:[
+    {type:"bar",label:"세대 수",data:I.map(i=>i.gens),backgroundColor:"rgba(88,166,255,.5)",yAxisID:"y"},
+    {type:"line",label:"학습 1등 점수",data:I.map(i=>i.best_train),borderColor:"#e3b341",showLine:false,pointRadius:4,yAxisID:"y2"}]},
+    options:{scales:{y:{title:{display:true,text:"세대"}},y2:{position:"right",grid:{drawOnChartArea:false},title:{display:true,text:"점수"}}}}});
+  $("feats").innerHTML=L.features.slice(0,14).map(f=>`<div class="feat"><span>${f.state?"🧍 ":""}${f.name}</span><div class="bar" style="margin:0"><i style="width:${Math.round(f.weight*100)}%;background:var(--purple)"></i></div><span class="muted">${Math.round(f.weight*100)}</span></div>`).join("")+
+    `<div class="note">🧍 = 내 상태(오늘 내 수익, 포지션 손익). 길수록 판단에 많이 쓰는 정보.</div>`;
+}
+async function runs(){
+  try{
+    const d=await J("https://api.github.com/repos/ksuin39/24h_bot/actions/runs?per_page=30");
+    const rs=d.workflow_runs.filter(r=>r.name.includes("v2")).slice(0,8);
+    const live=rs.some(r=>r.status!=="completed");
+    $("dot").className="dot"+(live?" live":""); $("st").textContent=live?"🧬 16대 병렬 진화 중…":"대기 중";
+    $("runs").querySelector("tbody").innerHTML=rs.map(r=>{const s=new Date(r.run_started_at||r.created_at),e=r.status==="completed"?new Date(r.updated_at):new Date(),m=Math.round((e-s)/60000);
+      return `<tr><td><a href="${r.html_url}" target="_blank">${r.name}</a></td><td>${r.status!=="completed"?"⏳ 실행 중":r.conclusion==="success"?"✅ 완료":"⚠️ "+r.conclusion}</td>
+      <td>${s.toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}</td><td>${m}분</td></tr>`}).join("");
+  }catch(e){ $("st").textContent="실행 상태를 불러오지 못했어요"; }
+}
+function all(){ load(); runs(); } all(); setInterval(all,60000);
+</script>
+</body>
+</html>

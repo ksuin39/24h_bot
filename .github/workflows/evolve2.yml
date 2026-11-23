@@ -1,0 +1,86 @@
+name: Evolve AI v2 (16대 병렬 진화)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'evolve2.py'
+      - '.github/workflows/evolve2.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: evolve2
+  cancel-in-progress: false
+
+env:
+  DEADLINE: '2026-11-25T20:00:00+09:00'   # 수요일 20시까지 라운드를 이어서 진행
+  ISLAND_MINUTES: '50'
+
+jobs:
+  islands:
+    name: 섬 ${{ matrix.island }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        island: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas numba
+      - name: 이번 라운드에 쓸 시간 계산 (마감 넘지 않게)
+        run: |
+          now=$(date -u +%s); dl=$(date -u -d "$DEADLINE" +%s)
+          left=$(( (dl - now) / 60 - 15 ))
+          m=$ISLAND_MINUTES; if [ "$left" -lt "$m" ]; then m=$left; fi; if [ "$m" -lt 5 ]; then m=5; fi
+          echo "MIN=$m" >> $GITHUB_ENV
+      - run: python evolve2.py island --id ${{ matrix.island }} --minutes $MIN
+      - uses: actions/upload-artifact@v4
+        with:
+          name: island-${{ matrix.island }}
+          path: v2_out/
+          retention-days: 2
+
+  merge:
+    name: 합치기 · 앙상블 선발 · 리포트
+    needs: islands
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas numba
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: island-*
+          merge-multiple: true
+          path: v2_out
+      - run: python evolve2.py merge
+      - name: 결과 저장
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add v2/ data/
+          git commit -m "v2 round: $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M')" || exit 0
+          for i in 1 2 3; do git pull --rebase && git push && break; sleep 5; done
+      - name: 다음 라운드 이어가기
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          now=$(date -u +%s); dl=$(date -u -d "$DEADLINE" +%s)
+          if [ $(( dl - now )) -gt 1500 ]; then
+            gh workflow run evolve2.yml --ref main && echo "다음 라운드 시작"
+          else
+            echo "마감 시각 도달 - 라운드 종료"
+          fi
