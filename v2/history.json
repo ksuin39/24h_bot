@@ -1,0 +1,1 @@
+[{"round": 1, "time": "2026-11-23 20:20", "total_gens": 192144, "round_gens": 192144, "islands": 16, "test_avg_daily": -0.008954473274384572, "test_best_avg_daily": -0.006471221714759079, "val_pos_months": 0.32, "val_avg_daily": -0.0021319295474387903, "val_mean_month_ret": -0.05233486510497987, "goal_met": false, "lev_btc": 5.0}]
