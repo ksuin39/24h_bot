@@ -37,7 +37,7 @@
 <body>
 <header>
   <h1>🧬 진화형 트레이딩 AI v2
-    <small>목표: 처음 보는 기간에서 하루 +1% (5코인 평균) · 1시간봉 · GitHub 서버 16대 병렬 진화 · 상위 10마리 투표 · 모의투자</small>
+    <small>목표: 처음 보는 기간에서 하루 +0.5% 이상 (추가 목표 +1%, 5코인 평균) · 1시간봉 · GitHub 서버 16대 병렬 진화 · 상위 10마리 투표 · 모의투자</small>
   </h1>
   <div class="status"><span class="dot" id="dot"></span><span id="st">확인 중…</span></div>
 </header>
@@ -45,7 +45,7 @@
   <div class="card" id="err" style="display:none"></div>
   <div class="kpis">
     <div class="card"><h2>🎯 목표 달성</h2><div class="goal" id="kGoal">-</div><div class="s" id="kGoalS">-</div></div>
-    <div class="card"><h2>💵 시험 30일 하루 평균 (5코인)</h2><div class="v" id="kTest">-</div><div class="s" id="kTestS">-</div>
+    <div class="card"><h2>💵 시험 30일 하루 평균 (5코인, 기준 +0.5%)</h2><div class="v" id="kTest">-</div><div class="s" id="kTestS">-</div>
       <div class="bar"><i id="kTestBar" style="width:0;background:var(--green)"></i></div></div>
     <div class="card"><h2>📅 검증 약 5달 플러스 비율</h2><div class="v" id="kVal">-</div><div class="s" id="kValS">-</div>
       <div class="bar"><i id="kValBar" style="width:0;background:var(--purple)"></i></div></div>
@@ -104,8 +104,8 @@ async function load(){
   try{ [L,H]=await Promise.all([J("../v2/latest.json"),J("../v2/history.json")]); $("err").style.display="none"; }
   catch(e){ $("err").style.display="block"; $("err").textContent="아직 v2 첫 라운드 결과가 없어요. 첫 라운드는 약 1시간 걸려요. ("+e.message+")"; return; }
   const g=L.goal, tgt=L.settings.goal_daily, N=L.coin_names;
-  $("kGoal").innerHTML=g.met?'<span class="pos">✅ 달성</span>':'<span class="neg">❌ 아직</span>';
-  $("kGoalS").textContent=`조건: 시험 30일 하루 평균 ≥ +1% 그리고 검증 플러스 ≥ 70% · 갱신 ${L.updated}`;
+  $("kGoal").innerHTML=g.stretch_met?'<span class="pos">🏆 +1% 달성</span>':g.met?'<span class="pos">✅ +0.5% 달성</span>':'<span class="neg">❌ 아직</span>';
+  $("kGoalS").textContent=`조건: 시험 30일 하루 평균 ≥ +0.5% (추가 목표 +1%) 그리고 검증 플러스 ≥ 70% · 갱신 ${L.updated}`;
   $("kTest").innerHTML=`<span class="${cls(g.test_avg_daily)}">${fp(g.test_avg_daily,3)}</span>`;
   $("kTestS").textContent=`목표 대비 ${Math.round(Math.max(0,g.test_avg_daily)/tgt*100)}% · BTC 레버리지 ${L.lev_btc}배 · 지금 BTC 판단: ${L.now_position==1?"🟢 롱":L.now_position==-1?"🔴 숏":"⚪ 관망"}`;
   $("kTestBar").style.width=Math.min(100,Math.max(0,g.test_avg_daily)/tgt*100)+"%";
@@ -122,7 +122,8 @@ async function load(){
   curve();
   draw("cHist",{data:{labels:H.map(h=>"R"+h.round),datasets:[
     {type:"line",label:"시험 하루 평균 % (앙상블)",data:H.map(h=>h.test_avg_daily*100),borderColor:"#3fb950",pointRadius:2,yAxisID:"y"},
-    {type:"line",label:"목표 +1%",data:H.map(()=>tgt*100),borderColor:"#3fb950",borderDash:[6,4],pointRadius:0,borderWidth:1,yAxisID:"y"},
+    {type:"line",label:"기준 +0.5%",data:H.map(()=>(L.settings.goal_daily||0.005)*100),borderColor:"#3fb950",borderDash:[6,4],pointRadius:0,borderWidth:1,yAxisID:"y"},
+    {type:"line",label:"추가 목표 +1%",data:H.map(()=>(L.settings.goal_stretch||0.01)*100),borderColor:"#e3b341",borderDash:[2,4],pointRadius:0,borderWidth:1,yAxisID:"y"},
     {type:"line",label:"검증 플러스 비율 %",data:H.map(h=>h.val_pos_months*100),borderColor:"#bc8cff",pointRadius:2,yAxisID:"y2"}]},
     options:{scales:{y:{title:{display:true,text:"하루 평균 %"}},y2:{position:"right",min:0,max:100,grid:{drawOnChartArea:false},title:{display:true,text:"플러스 %"}}}}});
   const V=L.val_months;

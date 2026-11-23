@@ -1,7 +1,7 @@
 """
 evolve2.py — 진화형 트레이딩 AI v2 (모의투자, 실제 주문 없음)
 ================================================================
-목표: 처음 보는 기간에서 하루 +1% (5개 코인 평균)
+목표: 처음 보는 기간에서 하루 +0.5% 이상 (추가 목표 +1%, 5개 코인 평균)
 
 v1 에서 배운 것 → v2 에서 바꾼 것
   1. 5분봉은 잡음·수수료 부담이 큼           → 1시간봉으로 판단
@@ -55,7 +55,8 @@ MAX_SURVIVORS = 60
 BATCH = 10               # 세대마다 뽑는 학습 '코인-달' 수
 MIGRANTS = 10            # 라운드마다 다른 섬에서 받아오는 개체 수
 ENSEMBLE = 10
-GOAL_DAILY = 0.01
+GOAL_DAILY = 0.005        # 성공 기준: 하루 +0.5% (Sin_jin: 최소 0.5%면 OK)
+GOAL_STRETCH = 0.01       # 추가 목표: 하루 +1%
 
 MARKET_FEATURES = ["1시간 변화", "4시간 변화", "12시간 변화", "1일 변화", "3일 변화", "1주 변화",
                    "20시간 평균 대비", "50시간 평균 대비", "SMA200 대비 (1시간봉)", "SMA200 대비 (4시간봉)",
@@ -456,7 +457,8 @@ def merge(sim=False):
     t_avg = float(np.mean([r["ens_avg_daily"] for r in test_rows.values()]))
     t_best = float(np.mean([r["best_avg_daily"] for r in test_rows.values()]))
     goal = {"test_avg_daily": t_avg, "val_pos_months": ens_val["pos_months"],
-            "met": bool(t_avg >= GOAL_DAILY and ens_val["pos_months"] >= 0.7)}
+            "met": bool(t_avg >= GOAL_DAILY and ens_val["pos_months"] >= 0.7),
+            "stretch_met": bool(t_avg >= GOAL_STRETCH and ens_val["pos_months"] >= 0.7)}
 
     # 앙상블이 보는 정보 (10마리 평균 중요도)
     imp = np.zeros(F)
@@ -490,7 +492,7 @@ def merge(sim=False):
     latest = {"updated": now, "round": state["round"], "started": state["started"], "total_gens": state["total_gens"],
               "round_gens": round_gens, "islands": islands, "settings": {
                   "fee": FEE, "timeframe": "1시간봉", "pop_per_island": POP, "ensemble": ENSEMBLE,
-                  "test_days": TEST_DAYS, "val_days": VAL_DAYS, "goal_daily": GOAL_DAILY,
+                  "test_days": TEST_DAYS, "val_days": VAL_DAYS, "goal_daily": GOAL_DAILY, "goal_stretch": GOAL_STRETCH,
                   "train_sets": len(train), "val_sets": len(val)},
               "goal": goal, "ensemble_val": ens_val, "best_val": best_val, "val_months": val_months,
               "test": test_rows, "test_curves": curves, "features": feats, "lev_btc": lev_btc,
@@ -507,13 +509,13 @@ def merge(sim=False):
 
 _마지막: {now} KST · 라운드 {state['round']} · 누적 {state['total_gens']:,}세대 (이번 라운드 {round_gens:,}세대, 섬 {len(islands)}개 병렬)_
 
-> 모의투자 실험 (실제 주문 없음) · **목표: 처음 보는 기간에서 하루 +1% (5코인 평균)**
+> 모의투자 실험 (실제 주문 없음) · **목표: 처음 보는 기간에서 하루 +0.5% 이상 (추가 목표 +1%, 5코인 평균)**
 > 1시간봉 · 섬 16개 병렬 진화 · 상위 {ENSEMBLE}마리 투표(앙상블) · 수수료 {FEE*100:.2f}% · BTC 레버리지 1~5배
 > 학습: 오래된 기간의 '코인-달' 중 세대마다 랜덤 10개 · 선발: 처음 보는 약 5달(검증) · 최종 시험: 마지막 30일
 > 📊 대시보드: https://ksuin39.github.io/24h_bot/dashboard2/
 
-## 목표 달성 여부: {'✅ 달성' if goal['met'] else '❌ 아직'}
-- 시험(마지막 30일) 5코인 평균 하루 **{pct(t_avg, 3)}** (목표 +1%) · 1등 단독 {pct(t_best, 3)}
+## 목표 달성 여부: {'🏆 +1% 달성' if goal['stretch_met'] else '✅ +0.5% 달성' if goal['met'] else '❌ 아직'}
+- 시험(마지막 30일) 5코인 평균 하루 **{pct(t_avg, 3)}** (기준 +0.5%, 추가 목표 +1%) · 1등 단독 {pct(t_best, 3)}
 - 검증 약 5달: 플러스인 코인-달 **{ens_val['pos_months']*100:.0f}%** (목표 70%) · 하루 평균 {pct(ens_val['avg_daily'], 3)}
 - 비트코인 레버리지(앙상블 중앙값) {lev_btc:.0f}배 · 지금 판단(BTC): {'롱' if now_pos == 1 else '숏' if now_pos == -1 else '관망'}
 
