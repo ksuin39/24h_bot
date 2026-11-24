@@ -52,7 +52,7 @@ PENALTY_W = 1.0
 SURVIVE_DAILY = 0.001
 SURVIVE_TRADE_DAYS = 0.7
 MAX_SURVIVORS = 60
-BATCH = 10               # 세대마다 뽑는 학습 '코인-달' 수
+BATCH = 16               # 세대마다 뽑는 학습 '코인-달' 수 (10 → 16: 더 넓게 봐서 외우기 줄이기)
 MIGRANTS = 10            # 라운드마다 다른 섬에서 받아오는 개체 수
 ENSEMBLE = 10
 GOAL_DAILY = 0.005        # 성공 기준: 하루 +0.5% (Sin_jin: 최소 0.5%면 OK)
@@ -187,6 +187,20 @@ def decode(g):
     return mask, W1, b1, w2, b2, th
 
 
+# 섬마다 성격을 다르게 (다양성): BTC 레버리지 상한, 돌연변이 크기, 최근 기간 가중
+ISLAND_LEV_CAP = [1, 2, 3, 5]
+ISLAND_SIGMA = [0.15, 0.3, 0.6]
+QFRAC = 0.3                 # 앙상블 투표 기준 (merge 에서 검증으로 고름)
+
+
+def lev_gene_max(cap):
+    """BTC 레버리지를 cap 배 이하로 묶는 유전자 최대값"""
+    if cap >= 5:
+        return 50.0
+    p_ = (cap - 1 + 0.49) / 4
+    return float(np.log(p_ / (1 - p_)))
+
+
 def coin_lev(g, max_lev):
     return float(np.round(1 + (max_lev - 1) * sigmoid(g[-1]))) if max_lev > 1 else 1.0
 
@@ -270,7 +284,7 @@ def pack(genomes, S):
 def run(genomes, S):
     base, ws, w2, b2, th, lev = pack(genomes, S)
     K = len(genomes)
-    q = 1 if K == 1 else max(1, int(round(K * 0.3)))
+    q = 1 if K == 1 else max(1, int(round(K * QFRAC)))
     return simulate(base, ws, w2, b2, th, q, S["close"], S["high"], S["low"], S["day"],
                     FEE, PENALTY_W, lev, MAINT_MARGIN, MAX_HOLD, BPD)
 
@@ -344,11 +358,23 @@ def island(iid, minutes, sim=False):
     pop = pop[:POP - MIGRANTS] + migr[:MIGRANTS]
     if len(pop) < POP:
         pop += [random_genome() for _ in range(POP - len(pop))]
+    lev_cap = ISLAND_LEV_CAP[iid % len(ISLAND_LEV_CAP)]
+    sigma = ISLAND_SIGMA[(iid // 4) % len(ISLAND_SIGMA)]
+    recent = (iid % 2 == 0)
+    gmax = lev_gene_max(lev_cap)
+    for g in pop:
+        g[-1] = min(g[-1], gmax)
+    # 최근 기간 가중: 짝수 섬은 최근 달일수록 더 자주 뽑음 (지금 장세에 가까운 데이터)
+    months_sorted = sorted(set(S["month"] for S in train))
+    rank = {m: i for i, m in enumerate(months_sorted)}
+    w = np.array([np.exp(2.0 * rank[S["month"]] / max(1, len(months_sorted) - 1)) if recent else 1.0 for S in train])
+    w = w / w.sum()
+    print(f"[섬 {iid}] 성격: BTC 레버리지 최대 {lev_cap}배 · 돌연변이 {sigma} · 최근 가중 {'예' if recent else '아니오'}", flush=True)
     log, gen = [], 0
     budget = minutes * 60 - (time.time() - t0)
     t1 = time.time()
     while time.time() - t1 < budget:
-        batch = random.sample(train, min(BATCH, len(train)))
+        batch = [train[i] for i in np.random.choice(len(train), min(BATCH, len(train)), replace=False, p=w)]
         res = [fitness(g, batch) for g in pop]
         sc = np.array([r[0] for r in res]); dl = np.array([r[1] for r in res]); td = np.array([r[2] for r in res])
         o = np.argsort(-sc); pop = [pop[i] for i in o]; sc, dl, td = sc[o], dl[o], td[o]
@@ -367,14 +393,16 @@ def island(iid, minutes, sim=False):
             nxt = [pop[i] for i in alive] + [random_genome() for _ in range(POP // 2)]
         while len(nxt) < POP:
             a, b = random.sample(parents, 2) if len(parents) >= 2 else (parents[0], parents[0])
-            nxt.append(mutate(crossover(a, b)))
+            c_ = mutate(crossover(a, b), sigma=sigma)
+            c_[-1] = min(c_[-1], gmax)
+            nxt.append(c_)
         pop = nxt
     # 마무리: 넓은 학습 샘플로 최종 순위
     big = random.sample(train, min(BATCH * 3, len(train)))
     sc = np.array([fitness(g, big)[0] for g in pop])
     o = np.argsort(-sc); pop = [pop[i] for i in o]
     save_json(f"{ISLAND_OUT}/island_{iid}.json",
-              {"id": iid, "gens": gen, "pop": [np.round(g, 4).tolist() for g in pop],
+              {"id": iid, "gens": gen, "lev_cap": lev_cap, "sigma": sigma, "recent": recent, "pop": [np.round(g, 4).tolist() for g in pop],
                "best_train": float(sc[o][0]), "log": log, "minutes": (time.time() - t0) / 60})
     print(f"[섬 {iid}] 완료: {gen}세대, 학습 1등 점수 {sc[o][0]:+.2f}", flush=True)
 
@@ -400,7 +428,8 @@ def merge(sim=False):
         if not pop:
             continue
         save_json(f"{OUT}/islands/{r['id']}.json", [g.tolist() for g in pop])
-        islands.append({"id": r["id"], "gens": r["gens"], "best_train": r["best_train"], "log": r["log"][-40:]})
+        islands.append({"id": r["id"], "gens": r["gens"], "best_train": r["best_train"], "log": r["log"][-40:],
+                        "lev_cap": r.get("lev_cap"), "sigma": r.get("sigma"), "recent": r.get("recent")})
         round_gens += r["gens"]
         cands += pop[:6]
     state["total_gens"] += round_gens
@@ -432,12 +461,27 @@ def merge(sim=False):
     scored.sort(key=lambda x: -x[0])
     if not scored:
         scored = [(val_stats([g])["score"], g, val_stats([g])) for g in pool[:ENSEMBLE]]
-    ens = [g for _, g, _ in scored[:ENSEMBLE]]
+    # 앙상블 크기(1/3/5/10)와 투표 기준(30%/50%)을 검증 성적으로 고름
+    global QFRAC
+    best_cfg, best_cfg_sc = None, -1e18
+    for K_ in [1, 3, 5, 10]:
+        for qf in [0.3, 0.5]:
+            if K_ == 1 and qf == 0.5:
+                continue
+            QFRAC = qf
+            vs = val_stats([g for _, g, _ in scored[:K_]])
+            key = vs["score"] + 50 * vs["pos_months"]
+            if key > best_cfg_sc:
+                best_cfg, best_cfg_sc = (K_, qf, vs), key
+    K_, QFRAC, ens_val = best_cfg
+    ens = [g for _, g, _ in scored[:K_]]
     best = scored[0][1]
-    save_json(f"{OUT}/ensemble.json", [g.tolist() for g in ens])
+    print(f"앙상블 선택: {K_}마리, 투표 기준 {int(QFRAC*100)}% (검증 플러스 {ens_val['pos_months']*100:.0f}%)", flush=True)
+    save_json(f"{OUT}/ensemble.json", [g.tolist() for g in [g for _, g, _ in scored[:ENSEMBLE]]])
+    save_json(f"{OUT}/ensemble_cfg.json", {"k": K_, "qfrac": QFRAC})
 
     # 성적표: 앙상블 / 1등 단독, 검증·시험
-    ens_val = val_stats(ens); best_val = scored[0][2]
+    best_val = scored[0][2]
     val_months = []
     for S in val:
         e = evaluate(ens, S)
@@ -478,7 +522,7 @@ def merge(sim=False):
         for k in range(len(ens)):
             s = np.tanh(np.tanh(base[k, 0]) @ w2[k] + b2[k])
             v += 1 if s > th[k] else (-1 if s < -th[k] else 0)
-        q = max(1, int(round(len(ens) * 0.3)))
+        q = 1 if len(ens) == 1 else max(1, int(round(len(ens) * QFRAC)))
         now_pos = 1 if v >= q else (-1 if v <= -q else 0)
 
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
@@ -494,7 +538,7 @@ def merge(sim=False):
                   "fee": FEE, "timeframe": "1시간봉", "pop_per_island": POP, "ensemble": ENSEMBLE,
                   "test_days": TEST_DAYS, "val_days": VAL_DAYS, "goal_daily": GOAL_DAILY, "goal_stretch": GOAL_STRETCH,
                   "train_sets": len(train), "val_sets": len(val)},
-              "goal": goal, "ensemble_val": ens_val, "best_val": best_val, "val_months": val_months,
+              "goal": goal, "ensemble_val": ens_val, "ensemble_cfg": {"k": len(ens), "qfrac": QFRAC}, "best_val": best_val, "val_months": val_months,
               "test": test_rows, "test_curves": curves, "features": feats, "lev_btc": lev_btc,
               "now_position": now_pos, "coin_names": {k: COIN_NAMES[k] for k in test}}
     save_json(f"{OUT}/latest.json", latest)
