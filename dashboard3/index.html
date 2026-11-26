@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>진화형 트레이딩 AI v3 — 걸어가며 검증</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--line:#2a313c;--text:#e6edf3;--sub:#8b949e;--green:#3fb950;--red:#f85149;--blue:#58a6ff;--gold:#e3b341;--purple:#bc8cff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;font-size:14px;line-height:1.5}
+  header{max-width:1200px;margin:0 auto;padding:20px 20px 8px;display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center}
+  h1{font-size:20px;margin:0} h1 small{display:block;font-size:12px;color:var(--sub);font-weight:400;margin-top:4px}
+  .status{display:flex;gap:8px;align-items:center;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:var(--panel);font-size:13px}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--sub)} .dot.live{background:var(--green);animation:p 1.6s infinite} @keyframes p{50%{opacity:.4}}
+  main{max-width:1200px;margin:0 auto;padding:8px 20px 40px;display:grid;gap:14px;grid-template-columns:repeat(12,1fr)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;grid-column:span 12;min-width:0}
+  .card h2{font-size:14px;margin:0 0 12px;color:var(--sub);font-weight:600}
+  .kpis{grid-column:span 12;display:grid;gap:14px;grid-template-columns:repeat(4,1fr)} .kpis .card{grid-column:auto}
+  .half{grid-column:span 6} @media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.half{grid-column:span 12}}
+  .v{font-size:26px;font-weight:800} .s{font-size:12px;color:var(--sub)}
+  .pos{color:var(--green)} .neg{color:var(--red)} .muted{color:var(--sub)}
+  .chart{position:relative;height:280px}
+  table{width:100%;border-collapse:collapse;font-size:13px} th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left} th{color:var(--sub);font-weight:600} .tw{overflow-x:auto}
+  tr.ai td{font-weight:700;background:rgba(188,140,255,.08)}
+  .note{font-size:12px;color:var(--sub);margin-top:8px}
+  .feat{display:grid;grid-template-columns:170px 1fr 36px;gap:8px;align-items:center;margin:5px 0;font-size:13px}
+  .bar{height:10px;border-radius:6px;background:#21262d;overflow:hidden} .bar i{display:block;height:100%;background:var(--purple)}
+  a{color:var(--blue)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧬 진화형 트레이딩 AI v3 — 걸어가며 검증
+    <small>최근 8개월을 하나씩 '시험 달'로 · 시험 달 이전 데이터로만 학습 · 시험 달은 학습·선발에 전혀 안 씀 · 기준선 5개와 비교 · 모의투자</small>
+  </h1>
+  <div class="status"><span class="dot" id="dot"></span><span id="st">확인 중…</span></div>
+</header>
+<main>
+  <div class="card" id="err" style="display:none"></div>
+  <div class="kpis">
+    <div class="card"><h2>🏁 AI가 모든 기준선을 이겼나</h2><div class="v" id="kGoal">-</div><div class="s" id="kGoalS">-</div></div>
+    <div class="card"><h2>💵 AI 하루 평균 (시험 달 전체)</h2><div class="v" id="kDaily">-</div><div class="s" id="kDailyS">-</div></div>
+    <div class="card"><h2>🎲 랜덤 매매를 이긴 비율</h2><div class="v" id="kRand">-</div><div class="s">50% 근처면 운과 다를 바 없음</div></div>
+    <div class="card"><h2>⚙️ 진화</h2><div class="v" id="kRound">-</div><div class="s" id="kGens">-</div></div>
+  </div>
+
+  <div class="card">
+    <h2>📊 AI vs 기준선 — 시험 코인-달 전체 (같은 달, 같은 수수료)</h2>
+    <div class="tw"><table id="tAgg"><thead><tr><th>전략</th><th>월평균 수익</th><th>하루 평균</th><th>플러스인 달</th><th>오른 달 평균</th><th>내린 달 평균</th><th>AI가 이긴 비율</th></tr></thead><tbody></tbody></table></div>
+    <div class="note">오른 달/내린 달 = 그 코인이 그달 올랐는지 내렸는지. 둘 다 좋아야 장세와 상관없는 실력.</div>
+  </div>
+
+  <div class="card half">
+    <h2>📈 전략별 월평균 수익</h2>
+    <div class="chart"><canvas id="cAgg"></canvas></div>
+  </div>
+  <div class="card half">
+    <h2>🧪 라운드별 AI 성적 vs 추세 추종</h2>
+    <div class="chart"><canvas id="cHist"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2>📅 시험 달 x 코인 — AI 수익 (회색 = 그냥 보유, 주황 = 추세 추종)</h2>
+    <div class="chart" style="height:300px"><canvas id="cCM"></canvas></div>
+  </div>
+
+  <div class="card half">
+    <h2>🗂️ 시험 달별 (학습은 그 이전 데이터로만)</h2>
+    <div class="tw"><table id="tFold"><thead><tr><th>시험 달</th><th>학습 기간</th><th>AI 평균</th><th>보유 평균</th><th>추세 평균</th></tr></thead><tbody></tbody></table></div>
+  </div>
+  <div class="card half">
+    <h2>👁️ 지금 쓸 AI(가장 최근 학습)가 보는 정보</h2>
+    <div id="feats"></div>
+  </div>
+
+  <div class="card">
+    <h2>⚙️ 실행 기록</h2>
+    <div class="tw"><table id="runs"><thead><tr><th>작업</th><th>상태</th><th>시작</th><th>소요</th></tr></thead><tbody></tbody></table></div>
+    <div class="note">이전 버전: <a href="../dashboard2/">v2</a> · <a href="../dashboard/">v1</a> · 저장소 <a href="https://github.com/ksuin39/24h_bot">ksuin39/24h_bot</a></div>
+  </div>
+</main>
+<script>
+const $=id=>document.getElementById(id), C={};
+const fp=(x,d=2)=>(x>=0?"+":"")+(x*100).toFixed(d)+"%", cls=x=>x>0?"pos":x<0?"neg":"muted";
+const LB={ai:"🧬 AI 앙상블",flat:"아무것도 안 함",hold:"그냥 보유",random:"랜덤 매매",trend:"추세 추종",breakout:"돌파 매매"};
+const ORDER=["ai","flat","hold","random","trend","breakout"];
+Chart.defaults.color="#8b949e"; Chart.defaults.borderColor="#2a313c";
+function draw(id,cfg){ if(C[id]) C[id].destroy(); cfg.options=Object.assign({responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:"index",intersect:false}},cfg.options||{}); C[id]=new Chart($(id),cfg); }
+async function J(u){ const r=await fetch(u+(u.includes("?")?"&":"?")+"t="+Date.now(),{cache:"no-store"}); if(!r.ok) throw new Error(u+" "+r.status); return r.json(); }
+async function load(){
+  let L,H;
+  try{ [L,H]=await Promise.all([J("../v3/latest.json"),J("../v3/history.json")]); $("err").style.display="none"; }
+  catch(e){ $("err").style.display="block"; $("err").textContent="아직 v3 첫 라운드 결과가 없어요 (약 1시간). "+e.message; return; }
+  const A=L.agg, B=L.beats, N=L.coin_names;
+  $("kGoal").innerHTML=L.goal.beats_all_baselines?'<span class="pos">✅ 예</span>':'<span class="neg">❌ 아니오</span>';
+  $("kGoalS").textContent=`시험 코인-달 ${L.coin_months.length}개 · 월평균 기준 · 갱신 ${L.updated}`;
+  $("kDaily").innerHTML=`<span class="${cls(A.ai.avg_daily)}">${fp(A.ai.avg_daily,3)}</span>`;
+  $("kDailyS").textContent=`플러스인 달 ${Math.round(A.ai.pos_ratio*100)}% · 월평균 ${fp(A.ai.mean_month_ret)}`;
+  $("kRand").innerHTML=`<span class="${B.random>0.6?"pos":B.random<0.4?"neg":"muted"}">${Math.round(B.random*100)}%</span>`;
+  $("kRound").textContent=`라운드 ${L.round} / ${L.max_rounds}`;
+  $("kGens").textContent=`누적 ${L.total_gens.toLocaleString()}세대 · 이번 ${L.round_gens.toLocaleString()} · 시작 ${L.started}`;
+  $("tAgg").querySelector("tbody").innerHTML=ORDER.map(k=>`<tr class="${k==="ai"?"ai":""}"><td>${LB[k]}</td>
+    <td class="${cls(A[k].mean_month_ret)}">${fp(A[k].mean_month_ret)}</td><td class="${cls(A[k].avg_daily)}">${fp(A[k].avg_daily,3)}</td>
+    <td>${Math.round(A[k].pos_ratio*100)}%</td><td class="${cls(A[k].up_mean)}">${fp(A[k].up_mean)}</td><td class="${cls(A[k].down_mean)}">${fp(A[k].down_mean)}</td>
+    <td>${k==="ai"?"-":Math.round(B[k]*100)+"%"}</td></tr>`).join("");
+  draw("cAgg",{type:"bar",data:{labels:ORDER.map(k=>LB[k]),datasets:[{label:"월평균 수익 %",data:ORDER.map(k=>A[k].mean_month_ret*100),
+    backgroundColor:ORDER.map(k=>k==="ai"?"rgba(188,140,255,.8)":A[k].mean_month_ret>=0?"rgba(63,185,80,.5)":"rgba(248,81,73,.5)")}]},options:{plugins:{legend:{display:false}}}});
+  draw("cHist",{type:"line",data:{labels:H.map(h=>"R"+h.round),datasets:[
+    {label:"AI 월평균 %",data:H.map(h=>h.ai_mean_month_ret*100),borderColor:"#bc8cff",pointRadius:2},
+    {label:"추세 추종 월평균 %",data:H.map(h=>h.trend_mean_month_ret*100),borderColor:"#e3b341",borderDash:[5,4],pointRadius:0},
+    {label:"랜덤 월평균 %",data:H.map(h=>h.random_mean_month_ret*100),borderColor:"#8b949e",borderDash:[2,4],pointRadius:0}]}});
+  const CM=L.coin_months;
+  draw("cCM",{type:"bar",data:{labels:CM.map(r=>`${r.month.slice(2)} ${r.coin}`),datasets:[
+    {label:"AI",data:CM.map(r=>r.ai*100),backgroundColor:CM.map(r=>r.ai>0?"rgba(63,185,80,.8)":"rgba(248,81,73,.7)")},
+    {label:"그냥 보유",data:CM.map(r=>r.hold*100),backgroundColor:"rgba(139,148,158,.35)"},
+    {label:"추세 추종",data:CM.map(r=>r.trend*100),backgroundColor:"rgba(227,179,65,.45)"}]},options:{scales:{x:{ticks:{maxRotation:70,minRotation:50,font:{size:10}}},y:{title:{display:true,text:"그달 수익 %"}}}}});
+  $("tFold").querySelector("tbody").innerHTML=L.folds.map(f=>{const v=Object.values(f.coins), m=k=>v.reduce((a,x)=>a+x[k],0)/Math.max(1,v.length);
+    return `<tr><td>${f.test_month}</td><td class="muted">${f.train_from}~${f.train_to}</td><td class="${cls(m("ai"))}"><b>${fp(m("ai"))}</b></td><td class="${cls(m("hold"))}">${fp(m("hold"))}</td><td class="${cls(m("trend"))}">${fp(m("trend"))}</td></tr>`}).join("");
+  if(L.live) $("feats").innerHTML=L.live.features.map(f=>`<div class="feat"><span>${f.state?"🧍 ":""}${f.name}</span><div class="bar"><i style="width:${Math.round(f.weight*100)}%"></i></div><span class="muted">${Math.round(f.weight*100)}</span></div>`).join("")+
+    `<div class="note">가장 최근 시험 달(${L.folds.at(-1).test_month}) 직전까지 학습한 AI · BTC 레버리지 ${L.live.btc_lev}배 · 🧍 = 내 상태 정보</div>`;
+}
+async function runs(){
+  try{ const d=await J("https://api.github.com/repos/ksuin39/24h_bot/actions/runs?per_page=30");
+    const rs=d.workflow_runs.filter(r=>r.name.includes("v3")).slice(0,6), live=rs.some(r=>r.status!=="completed");
+    $("dot").className="dot"+(live?" live":""); $("st").textContent=live?"🧬 16대 병렬 진화 중…":"대기 중";
+    $("runs").querySelector("tbody").innerHTML=rs.map(r=>{const s=new Date(r.run_started_at||r.created_at),e=r.status==="completed"?new Date(r.updated_at):new Date();
+      return `<tr><td><a href="${r.html_url}" target="_blank">${r.name}</a></td><td>${r.status!=="completed"?"⏳ 실행 중":r.conclusion==="success"?"✅ 완료":"⚠️ "+r.conclusion}</td><td>${s.toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}</td><td>${Math.round((e-s)/60000)}분</td></tr>`}).join("");
+  }catch(e){ $("st").textContent="실행 상태를 불러오지 못했어요"; }
+}
+function all(){load();runs();} all(); setInterval(all,60000);
+</script>
+</body>
+</html>

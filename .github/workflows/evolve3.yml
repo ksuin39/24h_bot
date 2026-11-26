@@ -1,0 +1,82 @@
+name: Evolve AI v3 (걸어가며 검증)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'evolve3.py'
+      - '.github/workflows/evolve3.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: evolve3
+  cancel-in-progress: false
+
+env:
+  MAX_ROUNDS: '24'       # 라운드 24번(약 하루)까지 이어서 진행
+  ISLAND_MINUTES: '50'
+
+jobs:
+  islands:
+    name: 섬 ${{ matrix.island }} (시험 달 ${{ matrix.island }}/2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        island: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas numba
+      - run: python evolve3.py island --id ${{ matrix.island }} --minutes $ISLAND_MINUTES
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v3-island-${{ matrix.island }}
+          path: v3_out/
+          retention-days: 2
+          if-no-files-found: ignore
+
+  report:
+    name: 앙상블 선발 · 기준선 비교 · 리포트
+    needs: islands
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pandas numba
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: v3-island-*
+          merge-multiple: true
+          path: v3_out
+      - name: 리포트 (목표 라운드 끝났으면 건너뜀)
+        run: |
+          n=$(ls v3_out/*.json 2>/dev/null | wc -l)
+          if [ "$n" -gt 0 ]; then python evolve3.py report; else echo "섬 결과 없음 → 건너뜀"; fi
+      - name: 결과 저장
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add v3/ data/
+          git commit -m "v3 round: $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M')" || exit 0
+          for i in 1 2 3; do git pull --rebase && git push && break; sleep 5; done
+      - name: 다음 라운드 이어가기
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git pull -q || true
+          r=$(python -c "import json;print(json.load(open('v3/state.json')).get('round',0))" 2>/dev/null || echo 0)
+          echo "라운드 $r / $MAX_ROUNDS"
+          if [ "$r" -lt "$MAX_ROUNDS" ]; then gh workflow run evolve3.yml --ref main && echo "다음 라운드 시작"; else echo "목표 라운드 완료"; fi

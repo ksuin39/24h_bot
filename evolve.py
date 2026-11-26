@@ -159,7 +159,7 @@ def load_data(coin="BTC"):
     touched = set(new.index.strftime("%Y-%m")) if len(new) else set()
     for m in touched:
         part = df[df.index.strftime("%Y-%m") == m]
-        part.to_csv(f"{DATA_DIR}/{pre}{m}.csv.gz", compression="gzip", float_format="%.7g")
+        part.to_csv(f"{DATA_DIR}/{pre}{m}.csv.gz", compression="gzip", float_format="%.10g")  # 거래소 원본 정밀도 유지
     keep = set(df.index.strftime("%Y-%m"))
     for f in files:
         if os.path.basename(f)[len(pre):len(pre) + 7] not in keep:
